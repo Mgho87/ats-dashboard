@@ -583,3 +583,51 @@ body.compact .chart-box{height:242px}body.compact .chart-box.sm{height:200px}
 .es-l{font-size:9px}
 .es-cell .es-v{font-size:13px;font-weight:800;margin-top:1px}
 .es-spark{height:20px;margin-top:5px;opacity:.9}
+
+/* ===================== PASS 1 (v2) — layout/visual: funnel · scroll tables · sidebar · zoom-robust ===================== */
+/* T5 — compact Google Ads funnel: less padding, tighter gap, lower cap */
+.g-funnel.gfunnel-cap{max-height:20rem;overflow:auto;padding:2px 0;gap:0}
+.gfunnel-cap .gf-stage{padding:0}
+.gfunnel-cap .gf-bar{padding:6px 14px}
+.gfunnel-cap .gf-n{font-size:1.05rem}
+.gfunnel-cap .gf-l{font-size:.72rem}
+.gfunnel-cap .gf-p{font-size:.62rem}
+.gfunnel-cap .gf-conv{padding:1px 0;font-size:.62rem}
+.gfunnel-cap .gf-conv i{font-size:.8rem}
+
+/* T6 — long Google Ads tables scroll inside their card; sticky header (already on .dt thead th) */
+.gscroll{max-height:21rem;overflow:auto}
+
+/* T13 — Net Profit sidebar: stacked, revenue visually dominant over expenses */
+.exec-split{grid-template-columns:1fr;gap:.5rem}
+.es-cell{display:grid;grid-template-columns:1fr auto;grid-template-areas:"l v" "s s";align-items:center;gap:1px .6rem;padding:.5rem .7rem;border-left:3px solid var(--line2)}
+.es-l{grid-area:l;font-size:.62rem}
+.es-cell .es-v{grid-area:v;text-align:right;font-size:.82rem}
+.es-spark{grid-area:s;height:1.1rem;margin-top:.25rem;opacity:.9}
+.es-cell:first-child{border-left-color:var(--green)}
+.es-cell:first-child .es-v{font-size:1.06rem;color:var(--green)}
+.es-cell:first-child .es-spark{height:1.5rem;opacity:1}
+.es-cell:last-child{border-left-color:var(--red);opacity:.95}
+.es-cell:last-child .es-v{color:var(--red)}
+
+/* T14 — zoom-robust BY CONSTRUCTION: rem units + auto-fit reflow + container queries.
+   Placed last so it authoritatively governs card-grid reflow regardless of earlier px media rules. */
+html,body{overflow-x:hidden}            /* no horizontal PAGE overflow… */
+.content{max-width:100%;min-width:0}
+.mini-table{max-width:100%}             /* …horizontal scroll is allowed only INSIDE tables (T6) */
+.card{container-type:inline-size}
+.grid-2{grid-template-columns:repeat(auto-fit,minmax(22rem,1fr));gap:1rem}
+.grid-3{grid-template-columns:repeat(auto-fit,minmax(17rem,1fr));gap:1rem}
+.hero{grid-template-columns:repeat(auto-fit,minmax(13.5rem,1fr));gap:1rem}
+.kpi-strip{grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:.9rem}
+.today-cells{grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.9rem}
+.exsum-grid{grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:.75rem}
+.insights-grid{grid-template-columns:repeat(auto-fit,minmax(13rem,1fr))}
+.gqual{grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr))}
+.prefs-grid{grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))}
+.swatches{grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))}
+.chart-box{height:18.75rem}
+.chart-box.sm{height:15rem}
+/* in-card layout reacts to the CARD's own width (container query), not the viewport */
+@container (max-width:34rem){ .exsum-grid,.insights-grid{grid-template-columns:1fr 1fr} }
+@container (max-width:20rem){ .exsum-grid,.insights-grid,.gqual{grid-template-columns:1fr} }

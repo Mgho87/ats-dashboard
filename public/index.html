@@ -124,9 +124,6 @@
       <section class="page active" id="page-overview">
         <div class="page-head"><div><h1>Executive Overview</h1><p id="ov-sub">Management summary across the selected period</p></div></div>
 
-        <!-- QUICK ACTIONS -->
-        <div class="quick-actions" id="quickActions"></div>
-
         <!-- MAIN KPI CARDS -->
         <section class="hero">
           <div class="hcard h-blue"><div class="hc-ic"><i class="ti ti-cash"></i></div><div class="hc-lbl">TOTAL REVENUE</div><div class="hc-val mono" id="h-rev">—</div><div class="hc-ctx" id="h-rev-ctx"></div><div class="hc-mini" id="h-rev-mini"></div></div>
@@ -148,10 +145,10 @@
         </div>
         <div class="grid-2">
           <div class="card"><h4>LEAD SOURCE REVENUE</h4><div class="chart-box sm"><canvas id="ovLead"></canvas></div></div>
-          <div class="card"><h4>SERVICE TYPE REVENUE</h4><div id="ovSvc" class="svc-bars"></div></div>
+          <div class="card"><h4>PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="ovMethods"></canvas></div></div>
         </div>
         <div class="grid-2">
-          <div class="card"><h4>PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="ovMethods"></canvas></div></div>
+          <div class="card"><h4>SERVICE TYPE REVENUE</h4><div id="ovSvc" class="svc-bars"></div></div>
           <div class="card"><h4>QUICK HEALTH</h4><div id="ovHealth"></div></div>
         </div>
 
@@ -185,19 +182,15 @@
       <section class="page" id="page-money">
         <div class="page-head"><div><h1>Money</h1><p>Revenue, collections, cash flow & expenses</p></div></div>
         <div class="kpi-strip" id="moneyKpis"></div>
-        <div class="grid-2">
-          <div class="card"><h4>REVENUE vs EXPENSES — MONTHLY</h4><div class="chart-box"><canvas id="moTrend"></canvas></div></div>
-          <div class="card"><h4>DAILY REVENUE</h4><div class="chart-box"><canvas id="moDaily"></canvas></div></div>
-        </div>
-        <!-- req #22: ordered money sections -->
-        <div class="card"><h4>1 · OUTSTANDING — PAYMENT AGEING (collections priority)</h4><div id="moAgeing" class="mini-table tall"></div></div>
-        <div class="card"><h4>2 · LARGEST OUTSTANDING CLIENTS</h4><div id="moLargestOut" class="mini-table"></div></div>
-        <div class="card"><h4>3 · COLLECTION FORECAST</h4><div id="moCollForecast"></div></div>
-        <div class="card"><h4>4 · TOP PAYING CLIENTS</h4><div id="moTopClients" class="mini-table tall"></div></div>
-        <div class="grid-2">
-          <div class="card"><h4>5 · EXPENSES BREAKDOWN</h4><div id="moExpenses" class="mini-table"></div></div>
-          <div class="card"><h4>6 · PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="moMethods"></canvas></div></div>
-        </div>
+        <!-- Pass1·T3: ordered lower sections -->
+        <div class="card"><h4>A · REVENUE vs EXPENSES — MONTHLY</h4><div class="chart-box"><canvas id="moTrend"></canvas></div></div>
+        <div class="card"><h4>B · PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="moMethods"></canvas></div></div>
+        <div class="card"><h4>C · DAILY REVENUE</h4><div class="chart-box"><canvas id="moDaily"></canvas></div></div>
+        <div class="card"><h4>D · COLLECTION FORECAST</h4><div id="moCollForecast"></div></div>
+        <div class="card"><h4>E · OUTSTANDING / COLLECTIONS — PAYMENT AGEING</h4><div id="moAgeing" class="mini-table tall"></div></div>
+        <div class="card"><h4>E · LARGEST OUTSTANDING CLIENTS</h4><div id="moLargestOut" class="mini-table"></div></div>
+        <div class="card"><h4>E · TOP PAYING CLIENTS</h4><div id="moTopClients" class="mini-table tall"></div></div>
+        <div class="card"><h4>F · EXPENSES BREAKDOWN</h4><div id="moExpenses" class="mini-table"></div></div>
       </section>
 
       <!-- ============ COLLECTION CENTER (req #7) ============ -->
@@ -260,27 +253,27 @@
         <!-- SECTION 3 — Orders vs Revenue, full width -->
         <div class="card"><h4>ORDERS vs REVENUE — DAILY</h4><div class="chart-box"><canvas id="gOrdersRev"></canvas></div></div>
 
-        <!-- SECTION 4 — share + service type, side by side -->
+        <!-- SECTION 4 — Google Ads funnel (Pass1·T4: above Share/Service; Pass1·T5: compact) -->
+        <div class="card"><h4>GOOGLE ADS FUNNEL</h4><div class="g-funnel gfunnel-cap" id="gFunnel"></div></div>
+
+        <!-- SECTION 5 — share + service type, BELOW the funnel -->
         <div class="grid-2">
           <div class="card"><h4>GOOGLE ADS REVENUE vs OTHER SOURCES</h4><div class="chart-box sm"><canvas id="gShare"></canvas></div></div>
           <div class="card"><h4>REVENUE BY SERVICE TYPE</h4><div class="chart-box sm"><canvas id="gByService"></canvas></div></div>
         </div>
 
-        <!-- SECTION 5 — Google Ads funnel, AFTER all charts, capped height -->
-        <div class="card"><h4>GOOGLE ADS FUNNEL</h4><div class="g-funnel gfunnel-cap" id="gFunnel"></div></div>
-
-        <!-- SECTION 6 — tables -->
+        <!-- SECTION 6 — tables (Pass1·T6 scroll-in-card w/ sticky header; Pass1·T7 Spend|ROAS paired) -->
         <div class="grid-2">
-          <div class="card"><h4>TOP CLIENTS — GOOGLE ADS</h4><div id="gTopClients" class="mini-table"></div></div>
-          <div class="card"><h4>TOP SERVICES — GOOGLE ADS</h4><div id="gTopServices" class="mini-table"></div></div>
+          <div class="card"><h4>TOP CLIENTS — GOOGLE ADS</h4><div id="gTopClients" class="mini-table gscroll"></div></div>
+          <div class="card"><h4>TOP SERVICES — GOOGLE ADS</h4><div id="gTopServices" class="mini-table gscroll"></div></div>
         </div>
         <div class="grid-2">
-          <div class="card"><h4>BEST REVENUE DAYS</h4><div id="gBestDays" class="mini-table"></div></div>
-          <div class="card"><h4>HIGHEST SPEND DAYS</h4><div id="gSpendDays" class="mini-table"></div></div>
+          <div class="card"><h4>BEST REVENUE DAYS</h4><div id="gBestDays" class="mini-table gscroll"></div></div>
+          <div class="card"><h4>GOOGLE ADS ORDERS</h4><div id="gOrders" class="mini-table gscroll"></div></div>
         </div>
         <div class="grid-2">
-          <div class="card"><h4>HIGHEST ROAS DAYS</h4><div id="gRoasDays" class="mini-table"></div></div>
-          <div class="card"><h4>GOOGLE ADS ORDERS</h4><div id="gOrders" class="mini-table"></div></div>
+          <div class="card"><h4>HIGHEST SPEND DAYS</h4><div id="gSpendDays" class="mini-table gscroll"></div></div>
+          <div class="card"><h4>HIGHEST ROAS DAYS</h4><div id="gRoasDays" class="mini-table gscroll"></div></div>
         </div>
 
         <!-- SECTION 7 — executive opportunities -->
