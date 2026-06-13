@@ -161,8 +161,25 @@ const upload = multer({
 app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
 // Forensic audit history — full field-level change log (newest first).
-app.get('/api/audit', (_req, res) => {
+app.get('/api/audit', async (_req, res) => {
   const changes = auditFx.loadHistory();
+  // req R: backfill transaction dates on historical changes that predate txnDate stamping, by
+  // matching each change's reference to a CURRENT transaction (derive from related transactions).
+  // Detection date (ts) remains the fallback for refs that no longer exist (e.g. deleted rows).
+  try {
+    const c = await loadParsed();
+    const recs = (c.parsed && c.parsed.records) || [];
+    if (recs.length) {
+      const refDate = Object.create(null);
+      for (const r of recs) { const key = String(r.ref || '').toLowerCase().trim(); if (key && !refDate[key]) refDate[key] = r.dateKey; }
+      for (const ch of changes) {
+        if (!ch.txnDate && ch.changeType !== 'SYSTEM_EVENT') {
+          const key = String(ch.ref || '').toLowerCase().trim();
+          if (key && refDate[key]) ch.txnDate = refDate[key];
+        }
+      }
+    }
+  } catch (_) { /* backfill is best-effort; never block the audit response */ }
   res.json({ changes: changes.slice(0, 3000), total: changes.length, generatedAt: new Date().toISOString() });
 });
 

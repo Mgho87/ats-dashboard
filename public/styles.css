@@ -566,3 +566,20 @@ body.compact .chart-box{height:242px}body.compact .chart-box.sm{height:200px}
 .toast.show{opacity:1;transform:none}
 .toast i{font-size:18px;color:var(--green);flex:none}
 .toast.bad{border-left-color:var(--red)} .toast.bad i{color:var(--red)}
+
+/* ===================== ROUND 5 — funnel cap · compact sidebar · report descriptions ===================== */
+/* Google Ads funnel capped (req C/S5) — sits in a standard card, never full-screen */
+.g-funnel.gfunnel-cap{max-height:400px;overflow:auto;padding:4px 0}
+.gfunnel-cap .gf-bar{padding:9px 14px}
+.gfunnel-cap .gf-n{font-size:19px}
+
+/* per-report explanation card (req I) */
+#repDesc{align-items:flex-start}
+#repDesc b{color:var(--text)}
+
+/* Net Profit sidebar — compact TradingView-style mini blocks (req P) */
+.exec-split{gap:8px;margin-bottom:11px}
+.es-cell{padding:8px 10px}
+.es-l{font-size:9px}
+.es-cell .es-v{font-size:13px;font-weight:800;margin-top:1px}
+.es-spark{height:20px;margin-top:5px;opacity:.9}

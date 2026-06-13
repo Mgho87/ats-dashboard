@@ -734,6 +734,23 @@ function rGoogle() {
   el('gSpendDays').innerHTML = table(['Date', 'Spend', 'Revenue', 'ROAS'], (g.highestSpendDays || []).map(d => [esc(d.date), AED(d.spend), AED(d.revenue), d.roas == null ? '—' : d.roas.toFixed(2) + 'x']));
   el('gOrders').innerHTML = table(['Date', 'Client', 'Service', 'Amount', 'Payment'], (v.googleAdsLeads || []).map(o => [esc(o.date), esc(o.client || '—'), esc(o.service), AED(o.amount), badge(o.status)]));
   renderGQuality();
+  renderGOpps();
+}
+/* GOOGLE ADS — EXECUTIVE OPPORTUNITIES (req C/S7) — reuses view data, no new calcs */
+function renderGOpps() {
+  if (!el('gOpps')) return;
+  const v = state.data.view, s = v.execSummary || {}, g = v.googleAds || {}, p = v.periodic || {};
+  const bestPeriod = p.highestRevenueDay;
+  const w = (ic, tone, label, value, sub) => `<div class="exsum"><div class="exsum-ic ${tone}"><i class="ti ${ic}"></i></div><div class="exsum-b"><div class="exsum-l">${esc(label)}</div><div class="exsum-v mono">${value}</div><div class="exsum-s">${esc(sub || '')}</div></div></div>`;
+  el('gOpps').innerHTML = [
+    w('ti-award', 'ic-green', 'Best Service', s.bestServiceMonth ? esc(s.bestServiceMonth.name) : '—', s.bestServiceMonth ? AED(s.bestServiceMonth.revenue) + ' this month' : ''),
+    w('ti-user-dollar', 'ic-green', 'Best Client', s.largestPaidClient ? esc(s.largestPaidClient.client) : '—', s.largestPaidClient ? AED(s.largestPaidClient.paid) + ' paid' : ''),
+    w('ti-calendar-star', 'ic-purple', 'Best Period', bestPeriod ? esc(bestPeriod.date) : '—', bestPeriod ? AED(bestPeriod.revenue) + ' top day' : ''),
+    w('ti-user-exclamation', 'ic-red', 'Largest Unpaid', s.largestUnpaidClient && s.largestUnpaidClient.outstanding > 0 ? esc(s.largestUnpaidClient.client) : '—', s.largestUnpaidClient ? AED(s.largestUnpaidClient.outstanding) + ' owed' : ''),
+    w('ti-rotate', 'ic-purple', 'Returning Insights', NUM(g.returningClients || 0) + ' clients', AED(g.returningRevenue || 0) + ' · ' + NUM(g.returningOrders || 0) + ' orders · ' + PCT(g.returningRevenueRatio || 0)),
+    w('ti-chart-arrows-vertical', 'ic-blue', 'Revenue Forecast', s.revenueForecast == null ? '—' : AED(s.revenueForecast), 'month-end run-rate'),
+    w('ti-cash-banknote', 'ic-green', 'Collection Forecast', s.collectionForecast == null ? '—' : AED(s.collectionForecast), 'next 30 days'),
+  ].join('');
 }
 /* GOOGLE ADS LEAD QUALITY (req #5) — order quality of Google leads, separate from ROAS */
 function renderGQuality() {
@@ -779,10 +796,19 @@ function rReports() {
   el('repTabs').querySelectorAll('[data-rt]').forEach(b => b.addEventListener('click', () => { repTab = b.dataset.rt; renderReport(); }));
   renderReport();
 }
+const REP_DESC = {
+  register: 'Full line-by-line transaction register for the selected range — every order with client, service, reference, source, method, amount, payment & delivery status. Use it as the master export for accounting.',
+  monthly: 'Revenue grouped by month — orders, revenue, share of total and average order value. Use it to track month-over-month growth.',
+  collections: 'Cash actually received, by client — revenue billed vs collected vs outstanding, with each client\'s collection rate. Use it to see who has paid.',
+  outstanding: 'Receivables still owed, by client — outstanding amount, oldest invoice age and number of open invoices. Use it to prioritise collection calls.',
+  google: 'Google Ads performance — attributed revenue, orders, ROAS, new vs returning clients, plus the underlying order register. Use it for marketing reviews.',
+  clients: 'Every client in the range — source, orders, revenue, collected, outstanding, last order and status. Use it for client and relationship reviews.',
+};
 function renderReport() {
   const v = state.data.view, k = v.kpis, g = v.googleAds || {}, c = v.collection || {};
   const range = `${v.filter.from} → ${v.filter.to}`;
   const lk = name => `<span class="lk" data-client="${esc(name)}">${esc(name || '—')}</span>`;
+  if (el('repDesc')) el('repDesc').innerHTML = `<i class="ti ti-info-circle"></i> <span><b>${esc((REP_TABS.find(x => x.k === repTab) || {}).t || '')}.</b> ${esc(REP_DESC[repTab] || '')} Showing <b>${esc(range)}</b> — export with the buttons above.</span>`;
   let title = '', html = '';
   if (repTab === 'register') {
     title = `TRANSACTION REGISTER · ${v.recentTransactions.length} shown · ${range}`;

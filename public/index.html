@@ -141,10 +141,7 @@
           <div class="today-cells" id="today"></div>
         </section>
 
-        <!-- ============ EXECUTIVE SUMMARY (req #1 — CEO command center) ============ -->
-        <div class="card exec-summary-card"><h4><i class="ti ti-dashboard"></i> EXECUTIVE SUMMARY <span class="dimv small">— today (Asia/Dubai) · this month · live leaders &amp; forecasts</span></h4><div id="execSummary" class="exsum-grid"></div></div>
-
-        <!-- ============ EXECUTIVE CHARTS (req #2) ============ -->
+        <!-- ============ EXECUTIVE CHARTS (req A: items 3-8, immediately after Selected Range) ============ -->
         <div class="grid-2">
           <div class="card"><h4>REVENUE TREND — MONTHLY</h4><div class="chart-box"><canvas id="ovTrend"></canvas></div></div>
           <div class="card"><h4>PAYMENT STATUS</h4><div class="chart-box sm"><canvas id="ovPay"></canvas></div><div id="ovReconcile" class="reconcile"></div></div>
@@ -157,6 +154,9 @@
           <div class="card"><h4>PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="ovMethods"></canvas></div></div>
           <div class="card"><h4>QUICK HEALTH</h4><div id="ovHealth"></div></div>
         </div>
+
+        <!-- ============ EXECUTIVE SUMMARY (req A: item 9 — after the charts) ============ -->
+        <div class="card exec-summary-card"><h4><i class="ti ti-dashboard"></i> EXECUTIVE SUMMARY <span class="dimv small">— today (Asia/Dubai) · this month · live leaders &amp; forecasts</span></h4><div id="execSummary" class="exsum-grid"></div></div>
 
         <!-- EXECUTIVE INSIGHTS -->
         <div class="card insights-card"><h4><i class="ti ti-bulb"></i> EXECUTIVE INSIGHTS</h4><div class="insights-grid" id="execInsights"></div></div>
@@ -246,32 +246,46 @@
         <div class="page-head"><div><h1>Google Ads</h1><p>Executive marketing performance center — ROAS, CPA, growth & attribution</p></div>
           <div class="g-score" id="gScore"></div>
         </div>
-        <!-- req #3: main KPI + quality blocks kept at the top, before the detailed charts -->
+        <!-- SECTION 1 — KPI cards + lead quality -->
         <div class="kpi-strip kpi-8" id="gKpis"></div>
         <div id="gNote" class="callout" hidden></div>
         <div class="card"><h4><i class="ti ti-shield-check"></i> GOOGLE ADS LEAD QUALITY <span class="dimv small">— quality of the leads, separate from ROAS</span></h4><div id="gQuality" class="gqual"></div></div>
-        <div class="card"><h4>GOOGLE ADS FUNNEL</h4><div class="g-funnel" id="gFunnel"></div></div>
+
+        <!-- SECTION 2 — Revenue vs Spend + ROAS trend, side by side -->
         <div class="grid-2">
           <div class="card"><h4>REVENUE vs AD SPEND — MONTHLY</h4><div class="chart-box"><canvas id="gRevSpend"></canvas></div></div>
           <div class="card" id="gRoasCard"><h4>ROAS TREND</h4><div class="chart-box" id="gRoasBox"><canvas id="gRoasTrend"></canvas></div></div>
         </div>
+
+        <!-- SECTION 3 — Orders vs Revenue, full width -->
+        <div class="card"><h4>ORDERS vs REVENUE — DAILY</h4><div class="chart-box"><canvas id="gOrdersRev"></canvas></div></div>
+
+        <!-- SECTION 4 — share + service type, side by side -->
         <div class="grid-2">
-          <div class="card"><h4>ORDERS vs REVENUE — DAILY</h4><div class="chart-box"><canvas id="gOrdersRev"></canvas></div></div>
           <div class="card"><h4>GOOGLE ADS REVENUE vs OTHER SOURCES</h4><div class="chart-box sm"><canvas id="gShare"></canvas></div></div>
+          <div class="card"><h4>REVENUE BY SERVICE TYPE</h4><div class="chart-box sm"><canvas id="gByService"></canvas></div></div>
         </div>
-        <div class="card"><h4>REVENUE BY SERVICE TYPE</h4><div class="chart-box sm"><canvas id="gByService"></canvas></div></div>
+
+        <!-- SECTION 5 — Google Ads funnel, AFTER all charts, capped height -->
+        <div class="card"><h4>GOOGLE ADS FUNNEL</h4><div class="g-funnel gfunnel-cap" id="gFunnel"></div></div>
+
+        <!-- SECTION 6 — tables -->
         <div class="grid-2">
           <div class="card"><h4>TOP CLIENTS — GOOGLE ADS</h4><div id="gTopClients" class="mini-table"></div></div>
           <div class="card"><h4>TOP SERVICES — GOOGLE ADS</h4><div id="gTopServices" class="mini-table"></div></div>
         </div>
         <div class="grid-2">
           <div class="card"><h4>BEST REVENUE DAYS</h4><div id="gBestDays" class="mini-table"></div></div>
-          <div class="card"><h4>HIGHEST ROAS DAYS</h4><div id="gRoasDays" class="mini-table"></div></div>
+          <div class="card"><h4>HIGHEST SPEND DAYS</h4><div id="gSpendDays" class="mini-table"></div></div>
         </div>
         <div class="grid-2">
-          <div class="card"><h4>HIGHEST SPEND DAYS</h4><div id="gSpendDays" class="mini-table"></div></div>
+          <div class="card"><h4>HIGHEST ROAS DAYS</h4><div id="gRoasDays" class="mini-table"></div></div>
           <div class="card"><h4>GOOGLE ADS ORDERS</h4><div id="gOrders" class="mini-table"></div></div>
         </div>
+
+        <!-- SECTION 7 — executive opportunities -->
+        <div class="card"><h4><i class="ti ti-businessplan"></i> EXECUTIVE OPPORTUNITIES <span class="dimv small">— where to focus next</span></h4><div id="gOpps" class="exsum-grid"></div></div>
+
         <div class="card" id="gEmirateCard"><h4>REVENUE BY EMIRATE</h4><div id="gEmirate" class="callout"><i class="ti ti-info-circle"></i> The Google Sheet has no Emirate/location column, so revenue-by-Emirate cannot be computed without inventing data. Add an "Emirate" column to the Transactions tab to enable this chart.</div></div>
       </section>
 
@@ -287,6 +301,7 @@
         <div class="callout"><i class="ti ti-info-circle"></i> Pick a report below. Every report reflects the <b>currently selected date range &amp; filters</b> from the bar above. Use <b>Export CSV / Excel</b> for the raw transaction data, or <b>Export PDF / Print</b> for the on-screen report.</div>
         <div class="kpi-strip" id="repKpis"></div>
         <div class="rep-tabs" id="repTabs"></div>
+        <div class="callout" id="repDesc"></div>
         <div class="card"><h4 id="repTitle">TRANSACTION REGISTER</h4><div id="repTable" class="mini-table tall"></div></div>
       </section>
 
