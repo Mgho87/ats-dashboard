@@ -1,0 +1,13 @@
+---
+# cPanel "Deploy HEAD Commit" tasks (Git Version Control).
+# Use this if you clone into ~/repositories and run the app from ~/ats-dashboard.
+# If you instead clone directly into the Node app root, you don't need this file —
+# just use deploy.sh via cron (see DEPLOY.md).
+deployment:
+  tasks:
+    - export DEPLOYPATH=$HOME/ats-dashboard
+    - /bin/mkdir -p "$DEPLOYPATH"
+    - /bin/cp -R ./* "$DEPLOYPATH/" 2>/dev/null || true
+    - /bin/cp -R ./.git* "$DEPLOYPATH/" 2>/dev/null || true
+    - /bin/mkdir -p "$DEPLOYPATH/tmp"
+    - /usr/bin/touch "$DEPLOYPATH/tmp/restart.txt"

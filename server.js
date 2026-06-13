@@ -30,7 +30,9 @@ const auditFx = require('./lib/audit');
 })();
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const PORT = +(process.env.PORT || 5050);
+// Accept a numeric port (local / Render) OR a Unix-socket path (cPanel Passenger sets PORT).
+const PORT_RAW = process.env.PORT || 5050;
+const PORT = /^\d+$/.test(String(PORT_RAW).trim()) ? Number(PORT_RAW) : String(PORT_RAW);
 const T_NAME = process.env.SHEET_TRANSACTIONS || 'Transactions';
 const E_NAME = process.env.SHEET_EXPENSES || 'Expenses';
 const S_NAME = process.env.SHEET_SETTINGS || 'Settings';
