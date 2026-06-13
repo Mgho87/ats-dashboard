@@ -1,0 +1,33 @@
+# Render Blueprint — permanent deployment for the ATS / ALMUTARJEM dashboard.
+# In Render: New + → Blueprint → connect this repo → Apply. Everything below is
+# provisioned automatically (always-on service, HTTPS, persistent disk, env).
+services:
+  - type: web
+    name: ats-dashboard
+    runtime: node
+    plan: starter            # always-on ($7/mo). Free plan sleeps + has no disk.
+    region: frankfurt        # closest Render region to the UAE (or: singapore)
+    branch: main
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true         # auto-redeploy on every git push
+    envVars:
+      - key: SPREADSHEET_ID
+        value: 1p7SrQZFavFmslQ84FNMIWtAVHcIhUOLKrSM6e3vuH4Q
+      - key: SHEET_TRANSACTIONS
+        value: Transactions
+      - key: SHEET_EXPENSES
+        value: Expenses
+      - key: SHEET_SETTINGS
+        value: Settings
+      - key: EXCEL_EMERGENCY_FALLBACK
+        value: "false"
+      - key: AUDIT_DIR        # forensic history persists on the disk below
+        value: /var/data
+      - key: NODE_VERSION
+        value: "20"
+    disk:
+      name: ats-data
+      mountPath: /var/data    # must match AUDIT_DIR
+      sizeGB: 1               # ~$0.25/mo; holds audit-history.json + last-snapshot.json

@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ALMUTARJEM Translation Services | Executive Control Center</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%235B8DEF'/%3E%3Cstop offset='1' stop-color='%237C5CFC'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='15' fill='url(%23g)'/%3E%3Ctext x='32' y='38' font-family='Arial' font-size='22' font-weight='bold' fill='%23fff' text-anchor='middle'%3EATS%3C/text%3E%3Crect x='16' y='45' width='32' height='3' rx='1.5' fill='%23E6B84A'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="loading" class="loading"><div class="spinner"></div><p>Loading control center…</p></div>
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="tb-left">
+      <div class="brandmark"><span class="bm-letters">ATS</span></div>
+      <div class="brandtxt">
+        <div class="brand-name">ALMUTARJEM Translation Services</div>
+        <div class="brand-sub">Executive Control Center</div>
+      </div>
+      <button class="icon-btn ham" id="ham" aria-label="Toggle menu"><i class="ti ti-menu-2"></i></button>
+    </div>
+    <div class="src-pill" id="srcPill"><span class="dot good"></span><span id="srcPillTxt">REAL DATA</span></div>
+    <div class="tb-right">
+      <div class="clock"><span id="clock-time" class="mono"></span><span id="clock-date"></span></div>
+      <button class="icon-btn" id="refreshBtn" title="Refresh data"><i class="ti ti-refresh"></i></button>
+      <button class="icon-btn" id="themeBtn" title="Toggle light / dark" aria-label="Theme"><i class="ti ti-moon" id="themeIcon"></i></button>
+      <div class="dd-wrap">
+        <button class="icon-btn bell" id="bellBtn" title="Notifications" aria-label="Notifications"><i class="ti ti-bell"></i><span class="nbadge" id="nbadge" hidden>0</span></button>
+        <div class="dropdown" id="notifPanel" hidden>
+          <div class="dd-head"><span>Notifications</span><button class="dd-link" id="notifReadAll">Mark all read</button></div>
+          <div class="dd-body" id="notifList"></div>
+        </div>
+      </div>
+      <div class="dd-wrap">
+        <div class="profile" id="profileBtn"><div class="pavatar">A</div><div class="pmeta"><div class="pn">Admin User</div><div class="pr">Super Admin</div></div><i class="ti ti-chevron-down pchev"></i></div>
+        <div class="dropdown" id="profilePanel" hidden>
+          <div class="dd-head"><span>Admin User · Super Admin</span></div>
+          <div class="dd-body" id="profileMenu"></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="shell">
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <nav class="snav" id="snav">
+        <a class="active" data-page="overview"><i class="ti ti-layout-dashboard"></i><span>Overview</span></a>
+        <a data-page="money"><i class="ti ti-coin"></i><span>Money</span></a>
+        <a data-page="pipeline"><i class="ti ti-route"></i><span>Pipeline</span></a>
+        <a data-page="operations"><i class="ti ti-adjustments"></i><span>Operations</span></a>
+        <a data-page="clients"><i class="ti ti-users"></i><span>Clients</span></a>
+        <a data-page="google"><i class="ti ti-brand-google"></i><span>Google Ads</span></a>
+        <a data-page="reports"><i class="ti ti-report-analytics"></i><span>Reports</span></a>
+        <a data-page="audit"><i class="ti ti-history"></i><span>Audit Log</span><span class="nav-badge" id="auditBadge"></span></a>
+        <a data-page="health"><i class="ti ti-heartbeat"></i><span>System Health</span><span class="nav-dot" id="healthDot"></span></a>
+        <a data-page="settings"><i class="ti ti-settings"></i><span>Settings</span></a>
+      </nav>
+      <div class="exec-card">
+        <div class="exec-head"><span class="exec-t">Net Profit</span><span class="exec-tag" id="execTag">All time</span></div>
+        <div class="exec-big mono" id="execProfit">—</div>
+        <div class="exec-margin"><span class="mono" id="execMargin">—</span> net profit margin</div>
+        <div class="exec-split">
+          <div class="es-cell"><div class="es-l">Revenue</div><div class="es-v mono" id="execRev">—</div></div>
+          <div class="es-cell"><div class="es-l">Expenses</div><div class="es-v mono" id="execExp">—</div></div>
+        </div>
+        <button class="exec-btn" data-page="money">Open Money</button>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="content">
+      <!-- FILTER BAR -->
+      <section class="filterbar">
+        <div class="fb-presets" id="presets">
+          <button data-range="today">Today</button>
+          <button data-range="yesterday">Yesterday</button>
+          <button data-range="7">Last 7 Days</button>
+          <button data-range="30">Last 30 Days</button>
+          <button data-range="month">This Month</button>
+          <button data-range="lastmonth">Last Month</button>
+          <button data-range="all" class="active">All Time</button>
+        </div>
+        <div class="fb-custom">
+          <input type="date" id="fFrom" class="fdate"><span class="fdash">→</span><input type="date" id="fTo" class="fdate">
+          <select id="fService" class="fsel"><option value="All">All Services</option></select>
+          <select id="fLead" class="fsel"><option value="All">All Sources</option></select>
+        </div>
+        <div class="fb-meta">
+          <span id="rangeLabel" class="range-label">All time</span>
+          <span class="sync-chip"><span id="syncDot" class="sdot"></span><span id="syncText">—</span></span>
+          <button class="btn-sync" id="syncNow" title="Sync now"><i class="ti ti-refresh"></i> Sync now</button>
+        </div>
+      </section>
+
+      <div id="errorBanner" class="error-banner" hidden>
+        <i class="ti ti-plug-connected-x"></i>
+        <div class="eb-txt"><strong id="errorTitle">Google Sheet not connected</strong><span id="errorMsg"></span></div>
+        <div class="eb-actions">
+          <a class="btn" id="errorOpenSheet" href="#" target="_blank" rel="noopener"><i class="ti ti-external-link"></i> Open Sheet</a>
+          <button class="btn primary" id="errorRetry"><i class="ti ti-refresh"></i> Retry connection</button>
+        </div>
+      </div>
+
+      <div id="emptyBanner" class="empty-banner" hidden>
+        <i class="ti ti-calendar-off"></i>
+        <div class="eb-txt"><strong id="emptyTitle">No transactions recorded for this date.</strong><span id="emptyMsg"></span></div>
+        <div class="eb-actions">
+          <button class="btn primary" id="emptyJump"><i class="ti ti-player-track-next"></i> View Latest Available Data</button>
+          <button class="btn" id="emptyReset"><i class="ti ti-arrow-back-up"></i> All time</button>
+        </div>
+      </div>
+
+      <!-- ============ OVERVIEW ============ -->
+      <section class="page active" id="page-overview">
+        <div class="page-head"><div><h1>Executive Overview</h1><p id="ov-sub">Management summary across the selected period</p></div></div>
+
+        <section class="hero">
+          <div class="hcard h-blue"><div class="hc-ic"><i class="ti ti-cash"></i></div><div class="hc-lbl">TOTAL REVENUE</div><div class="hc-val mono" id="h-rev">—</div><div class="hc-ctx" id="h-rev-ctx"></div><div class="hc-mini" id="h-rev-mini"></div></div>
+          <div class="hcard h-green"><div class="hc-ic"><i class="ti ti-wallet"></i></div><div class="hc-lbl">CASH COLLECTED</div><div class="hc-val mono" id="h-paid">—</div><div class="hc-ctx" id="h-paid-ctx"></div><div class="hc-mini" id="h-paid-mini"></div></div>
+          <div class="hcard h-red"><div class="hc-ic"><i class="ti ti-alert-triangle"></i></div><div class="hc-lbl">OUTSTANDING TO COLLECT</div><div class="hc-val mono" id="h-out">—</div><div class="hc-ctx" id="h-out-ctx"></div><div class="hc-mini" id="h-out-mini"></div></div>
+          <div class="hcard h-gold"><div class="hc-ic"><i class="ti ti-trending-up"></i></div><div class="hc-lbl">NET PROFIT</div><div class="hc-val mono" id="h-profit">—</div><div class="hc-ctx" id="h-profit-ctx"></div><div class="hc-mini" id="h-profit-mini"></div></div>
+        </section>
+
+        <section class="today-bar">
+          <div class="tb-h"><i class="ti ti-calendar-event"></i> SELECTED RANGE <span id="today-label"></span></div>
+          <div class="today-cells" id="today"></div>
+        </section>
+
+        <div class="grid-2">
+          <div class="card"><h4>REVENUE TREND — MONTHLY</h4><div class="chart-box"><canvas id="ovTrend"></canvas></div></div>
+          <div class="card"><h4>PAYMENT STATUS</h4><div class="chart-box sm"><canvas id="ovPay"></canvas></div><div id="ovReconcile" class="reconcile"></div></div>
+        </div>
+        <div class="grid-3">
+          <div class="card"><h4>LEAD SOURCE REVENUE</h4><div class="chart-box sm"><canvas id="ovLead"></canvas></div></div>
+          <div class="card"><h4>SERVICE TYPE REVENUE</h4><div id="ovSvc" class="svc-bars"></div></div>
+          <div class="card"><h4>QUICK HEALTH</h4><div id="ovHealth"></div></div>
+        </div>
+      </section>
+
+      <!-- ============ MONEY ============ -->
+      <section class="page" id="page-money">
+        <div class="page-head"><div><h1>Money</h1><p>Revenue, collections, cash flow & expenses</p></div></div>
+        <div class="kpi-strip" id="moneyKpis"></div>
+        <div class="grid-2">
+          <div class="card"><h4>REVENUE vs EXPENSES — MONTHLY</h4><div class="chart-box"><canvas id="moTrend"></canvas></div></div>
+          <div class="card"><h4>DAILY REVENUE</h4><div class="chart-box"><canvas id="moDaily"></canvas></div></div>
+        </div>
+        <div class="grid-3">
+          <div class="card"><h4>PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="moMethods"></canvas></div></div>
+          <div class="card span2"><h4>EXPENSES BREAKDOWN</h4><div id="moExpenses" class="mini-table"></div></div>
+        </div>
+        <div class="grid-2">
+          <div class="card"><h4>TOP PAYING CLIENTS</h4><div id="moTopClients" class="mini-table"></div></div>
+          <div class="card"><h4>OUTSTANDING — PAYMENT AGEING</h4><div id="moAgeing" class="mini-table"></div></div>
+        </div>
+      </section>
+
+      <!-- ============ PIPELINE ============ -->
+      <section class="page" id="page-pipeline">
+        <div class="page-head"><div><h1>Pipeline</h1><p>Leads → orders → delivery flow</p></div></div>
+        <div class="funnel" id="pipeFunnel"></div>
+        <div class="grid-2">
+          <div class="card"><h4>LEAD SOURCE PERFORMANCE</h4><div id="pipeLeads" class="mini-table"></div></div>
+          <div class="card"><h4>DELIVERY STATUS</h4><div class="chart-box sm"><canvas id="pipeDelivery"></canvas></div></div>
+        </div>
+        <div class="card"><h4>ORDERS — FILTERED</h4><div id="pipeOrders" class="mini-table tall"></div></div>
+      </section>
+
+      <!-- ============ OPERATIONS ============ -->
+      <section class="page" id="page-operations">
+        <div class="page-head"><div><h1>Operations</h1><p>Delivery performance & workload</p></div></div>
+        <div class="kpi-strip" id="opsKpis"></div>
+        <div class="grid-2">
+          <div class="card"><h4>ORDERS BY SERVICE</h4><div class="chart-box"><canvas id="opsService"></canvas></div></div>
+          <div class="card"><h4>DELIVERY PERFORMANCE</h4><div id="opsDelivery"></div></div>
+        </div>
+        <div class="card"><h4>PENDING / IN-PROGRESS DELIVERIES</h4><div id="opsPending" class="mini-table tall"></div></div>
+      </section>
+
+      <!-- ============ CLIENTS ============ -->
+      <section class="page" id="page-clients">
+        <div class="page-head"><div><h1>Clients</h1><p>Client intelligence & revenue concentration</p></div></div>
+        <div class="kpi-strip" id="clientsKpis"></div>
+        <div class="grid-2">
+          <div class="card"><h4>CLIENT REVENUE — TOP 10</h4><div class="chart-box"><canvas id="clChart"></canvas></div></div>
+          <div class="card"><h4>LEAD SOURCE PER CLIENT</h4><div class="chart-box sm"><canvas id="clLead"></canvas></div></div>
+        </div>
+        <div class="card"><h4>CLIENT DIRECTORY</h4><div id="clTable" class="mini-table tall"></div></div>
+      </section>
+
+      <!-- ============ GOOGLE ADS ============ -->
+      <section class="page" id="page-google">
+        <div class="page-head"><div><h1>Google Ads</h1><p>Marketing performance & return on ad spend</p></div></div>
+        <div class="kpi-strip" id="gKpis"></div>
+        <div id="gNote" class="callout" hidden></div>
+        <div class="grid-2">
+          <div class="card"><h4>GOOGLE ADS REVENUE vs OTHER SOURCES</h4><div class="chart-box sm"><canvas id="gShare"></canvas></div></div>
+          <div class="card"><h4>GOOGLE ADS REVENUE OVER TIME</h4><div class="chart-box"><canvas id="gTrend"></canvas></div></div>
+        </div>
+        <div class="card"><h4>GOOGLE ADS ORDERS</h4><div id="gOrders" class="mini-table tall"></div></div>
+      </section>
+
+      <!-- ============ REPORTS ============ -->
+      <section class="page" id="page-reports">
+        <div class="page-head"><div><h1>Reports</h1><p>Export & detailed transaction register</p></div>
+          <div class="head-actions">
+            <button class="btn" id="expCsv"><i class="ti ti-file-spreadsheet"></i> CSV</button>
+            <button class="btn" id="expExcel"><i class="ti ti-table"></i> Excel</button>
+            <button class="btn" id="expPdf"><i class="ti ti-file-type-pdf"></i> PDF / Print</button>
+          </div>
+        </div>
+        <div class="kpi-strip" id="repKpis"></div>
+        <div class="card"><h4 id="repTitle">TRANSACTION REGISTER</h4><div id="repTable" class="mini-table tall"></div></div>
+      </section>
+
+      <!-- ============ AUDIT LOG ============ -->
+      <section class="page" id="page-audit">
+        <div class="page-head"><div><h1>Audit Log</h1><p>Forensic record of every business-data change — what changed, when, and the value before vs after</p></div>
+          <div class="head-actions"><button class="btn" id="auditExport"><i class="ti ti-download"></i> Export log (CSV)</button></div>
+        </div>
+        <div class="kpi-strip" id="auditKpis"></div>
+        <div class="audit-filters">
+          <div class="af-presets" id="afTime">
+            <button data-af="today" class="active">Today</button>
+            <button data-af="yesterday">Yesterday</button>
+            <button data-af="7">Last 7 days</button>
+            <button data-af="all">All</button>
+          </div>
+          <select id="afSeverity" class="fsel"><option value="all">All severity</option><option>INFO</option><option>WARNING</option><option>CRITICAL</option></select>
+          <select id="afType" class="fsel"><option value="all">All change types</option><option>CREATE</option><option>UPDATE</option><option>DELETE</option><option>STATUS_CHANGE</option><option>VALUE_CHANGE</option><option>SYSTEM_EVENT</option></select>
+          <select id="afUser" class="fsel"><option value="all">All users</option></select>
+          <input id="afRef" class="fsearch" placeholder="Search reference / client / column…">
+        </div>
+        <div class="card"><h4 id="auditLogTitle">FORENSIC CHANGE LOG</h4><div id="forensicTable" class="mini-table tall"></div></div>
+        <div class="grid-2">
+          <div class="card"><h4>DATA VALIDATION</h4><div id="auditValidation" class="kv"></div></div>
+          <div class="card"><h4>SYSTEM &amp; SYNC EVENTS</h4>
+            <div class="log-head"><span>Time</span><span>Event</span><span>Status</span><span>Details</span></div>
+            <div id="auditSystem" class="log-table"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SYSTEM HEALTH ============ -->
+      <section class="page" id="page-health">
+        <div class="page-head"><div><h1>System Health</h1><p>Can this dashboard be trusted right now?</p></div></div>
+        <div id="trustBanner" class="trust"></div>
+        <div class="kpi-strip" id="healthKpis"></div>
+        <div class="grid-2">
+          <div class="card"><h4>DATA SOURCE & SYNC</h4><div id="healthSource" class="kv"></div></div>
+          <div class="card"><h4>CONNECTIVITY</h4><div id="healthConn" class="kv"></div></div>
+        </div>
+        <div class="card"><h4>DATE & FILTER DIAGNOSTICS</h4><div id="healthDates" class="kv"></div></div>
+        <div class="grid-2">
+          <div class="card"><h4>VALIDATION CHECKS</h4><div id="healthChecks" class="checks"></div></div>
+          <div class="card"><h4>ACTIVE WARNINGS & FAILED VALIDATIONS</h4><div id="healthWarn" class="mini-table tall"></div></div>
+        </div>
+      </section>
+
+      <!-- ============ SETTINGS ============ -->
+      <section class="page" id="page-settings">
+        <div class="page-head"><div><h1>Settings</h1><p>Data source, sync status & column mapping</p></div></div>
+        <div class="grid-2">
+          <div class="card"><h4>DATA SOURCE</h4><div id="setSource" class="kv"></div>
+            <div class="upload-row">
+              <label class="btn"><i class="ti ti-upload"></i> Replace Workbook<input type="file" id="upSource" accept=".xlsx,.xls,.csv" hidden></label>
+              <span id="upStatus" class="up-status"></span>
+            </div>
+          </div>
+          <div class="card"><h4>SHEET STATUS</h4><div id="setSheet" class="kv"></div></div>
+        </div>
+        <div class="grid-2">
+          <div class="card"><h4>COLUMN MAPPING</h4><div id="setMapping" class="kv"></div></div>
+          <div class="card"><h4>DETECTED LISTS (Settings tab)</h4><div id="setLists" class="kv"></div></div>
+        </div>
+      </section>
+
+      <footer class="foot">ALMUTARJEM TRANSLATION SERVICES · EXECUTIVE CONTROL CENTER · Source: <b id="src-foot"></b> · Last sync: <span id="updated">—</span></footer>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
