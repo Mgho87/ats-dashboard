@@ -22,3 +22,4 @@ cloudflared.exe
 # misc
 .playwright-mcp/
 .DS_Store
+almutarjem-audit/
