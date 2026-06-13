@@ -270,8 +270,32 @@ function rOverview() {
   ].join('');
   renderQuickActions();
   renderInsights();
+  renderOpportunities();
 }
 function healthRow(l, v, tone) { return `<div class="hr"><span class="hr-l">${l}</span><span class="hr-v mono">${v}</span><span class="dot ${tone}"></span></div>`; }
+
+/* ---------------- TOP OPPORTUNITIES CENTER (req #4) ---------------- */
+let oppTab = 'A';
+const OPP_TABS = [
+  { k: 'A', t: 'Largest Unpaid' }, { k: 'B', t: 'Oldest Unpaid' }, { k: 'C', t: 'Multiple Invoices' },
+  { k: 'D', t: 'Dormant High-Value' }, { k: 'E', t: 'Highest Outstanding' }, { k: 'F', t: 'Largest Collection' },
+];
+function renderOpportunities() {
+  if (!el('oppTabs')) return;
+  const o = state.data.view.opportunities || {};
+  el('oppTabs').innerHTML = OPP_TABS.map(x => `<button class="opp-tab ${x.k === oppTab ? 'active' : ''}" data-ot="${x.k}">${x.t}</button>`).join('');
+  el('oppTabs').querySelectorAll('[data-ot]').forEach(b => b.addEventListener('click', () => { oppTab = b.dataset.ot; renderOpportunities(); }));
+  const lk = name => `<span class="lk" data-client="${esc(name)}">${esc(name || '—')}</span>`;
+  let html = '';
+  if (oppTab === 'A') html = table(['Client', 'Outstanding', 'Orders', 'Lead'], (o.largestUnpaid || []).map(c => [lk(c.client), `<span class="warn-txt">${AED(c.outstanding)}</span>`, NUM(c.orders), esc(c.lead)]));
+  else if (oppTab === 'B') html = table(['Date', 'Client', 'Service', 'Amount', 'Age'], (o.oldestUnpaid || []).map(c => [esc(c.date), lk(c.client), esc(c.service), AED(c.amount), `<b class="risk-${c.level}">${c.ageDays}d</b>`]));
+  else if (oppTab === 'C') html = table(['Client', 'Outstanding Invoices', 'Outstanding', 'Total Orders'], (o.multipleInvoices || []).map(c => [lk(c.client), `<span class="pill warn">${c.invoiceCount}×</span>`, `<span class="warn-txt">${AED(c.outstanding)}</span>`, NUM(c.orders)]));
+  else if (oppTab === 'D') html = table(['Client', 'Lifetime Revenue', 'Last Order', 'Days Since'], (o.dormantHighValue || []).map(c => [lk(c.client), AED(c.revenue), esc(c.lastDate), `<b>${c.daysSince}d</b>`]));
+  else if (oppTab === 'E') html = table(['Date', 'Client', 'Service', 'Amount', 'Risk'], (o.highestValueOutstanding || []).map(c => [esc(c.date), lk(c.client), esc(c.service), `<span class="warn-txt">${AED(c.amount)}</span>`, `<span class="risk-${c.level}">${c.level}</span>`]));
+  else html = table(['Client', 'Collection Opportunity', 'Orders', 'Lead'], (o.largestCollection || []).map(c => [lk(c.client), `<b class="good-txt">${AED(c.outstanding)}</b>`, NUM(c.orders), esc(c.lead)]));
+  el('oppPanel').innerHTML = `<div class="opp-summary">Total outstanding across <b>${NUM(o.clientsOwing || 0)}</b> clients: <b class="warn-txt">${AED(o.totalOutstanding || 0)}</b> — the largest collection opportunities for management.</div>` + html;
+  el('oppPanel').querySelectorAll('[data-client]').forEach(s => s.addEventListener('click', () => openClient(s.dataset.client)));
+}
 
 /* ---------------- QUICK ACTIONS (req #16) ---------------- */
 const QUICK_ACTIONS = [
@@ -337,17 +361,23 @@ function openClient(name) {
   if (!state.data) return;
   const c = (state.data.view.topClients || []).find(x => x.client === name);
   if (!c) return;
-  el('cmName').textContent = c.client;
   const collected = c.revenue ? c.paid / c.revenue * 100 : 0;
+  const stoneMap = { 'Active': 'good', 'Owes': 'warn', 'At risk': 'bad', 'Dormant': 'neutral' };
+  el('cmName').innerHTML = `${esc(c.client)} <span class="pill ${stoneMap[c.status] || 'neutral'}">${esc(c.status)}</span>`;
+  const trend = (c.trend || []).map(t => t.revenue);
   el('cmBody').innerHTML =
     `<div class="cm-grid">
-      ${insTile('ti-cash', 'Total Revenue', AED(c.revenue), c.orders + ' orders', 'ic-blue')}
-      ${insTile('ti-wallet', 'Paid', AED(c.paid), PCT(collected) + ' collected', 'ic-green')}
-      ${insTile('ti-alert-triangle', 'Outstanding', AED(c.outstanding), c.outstanding > 0 ? 'to collect' : 'fully paid', c.outstanding > 0 ? 'ic-red' : 'ic-green')}
-      ${insTile('ti-receipt', 'Avg Order Value', AED(c.aov), c.repeat ? 'repeat client' : 'single order', 'ic-purple')}
-      ${insTile('ti-windmill', 'Lead Source', esc(c.lead), '', 'ic-teal')}
-      ${insTile('ti-calendar', 'Last Transaction', esc(c.lastDate || '—'), '', 'ic-blue')}
+      ${insTile('ti-diamond', 'Lifetime Value (LTV)', AED(c.ltv), 'total billed', 'ic-gold')}
+      ${insTile('ti-cash', 'Lifetime Revenue', AED(c.revenue), NUM(c.orders) + ' orders', 'ic-blue')}
+      ${insTile('ti-wallet', 'Lifetime Paid', AED(c.paid), PCT(collected) + ' collected', 'ic-green')}
+      ${insTile('ti-alert-triangle', 'Lifetime Outstanding', AED(c.outstanding), c.outstanding > 0 ? NUM(c.invoiceCount) + ' open invoice(s)' : 'fully paid', c.outstanding > 0 ? 'ic-red' : 'ic-green')}
+      ${insTile('ti-receipt', 'Average Order Value', AED(c.aov), c.repeat ? 'repeat client' : 'single order', 'ic-purple')}
+      ${insTile('ti-windmill', 'Acquisition Source', esc(c.acqLead || c.lead), 'first via', 'ic-teal')}
+      ${insTile('ti-calendar-plus', 'First Order', esc(c.firstDate || '—'), '', 'ic-blue')}
+      ${insTile('ti-calendar', 'Last Order', esc(c.lastDate || '—'), c.daysSince + ' days ago', 'ic-blue')}
     </div>
+    <div class="cm-section"><div class="cm-st">Revenue Trend</div><div class="cm-trend">${trend.length > 1 ? spark(trend, C.blue, 44) : '<span class="dimv small">not enough history</span>'}</div></div>
+    ${(c.invoices && c.invoices.length) ? `<div class="cm-section"><div class="cm-st">Outstanding Invoices (${c.invoiceCount})</div>` + table(['Date', 'Reference', 'Service', 'Amount', 'Status'], c.invoices.map(iv => [esc(iv.date), esc(iv.ref || '—'), esc(iv.service), `<span class="warn-txt">${AED(iv.amount)}</span>`, badge(iv.status)])) + '</div>' : ''}
     <div class="cm-actions"><button class="btn" id="cmGoPipeline"><i class="ti ti-list"></i> See orders in Pipeline</button></div>`;
   el('clientModal').hidden = false;
   const gp = el('cmGoPipeline'); if (gp) gp.addEventListener('click', () => { el('clientModal').hidden = true; go('pipeline'); });
@@ -467,8 +497,17 @@ function rGoogle() {
     kpi('Orders Growth', cmp.hasPrev && cmp.orders != null ? (cmp.orders >= 0 ? '+' : '') + PCT(cmp.orders) : 'N/A', 'vs previous period', !cmp.hasPrev ? 'neutral' : cmp.orders >= 0 ? 'good' : 'bad'),
     kpi('Best Revenue Day', g.bestDays && g.bestDays[0] ? AEDk(g.bestDays[0].revenue) : '—', g.bestDays && g.bestDays[0] ? g.bestDays[0].date : ''),
     kpi('Google Revenue Share', PCT(g.revenueShare), 'of all revenue'),
+    kpi('New Google Clients', NUM(g.newClients), AED(g.newRevenue) + ' · ' + NUM(g.newOrders) + ' orders', 'good'),
+    kpi('Returning Google Clients', NUM(g.returningClients), AED(g.returningRevenue) + ' · ' + NUM(g.returningOrders) + ' orders', g.returningClients ? 'good' : 'neutral'),
+    kpi('Returning Revenue Ratio', PCT(g.returningRevenueRatio), 'of Google Ads revenue', g.returningRevenueRatio >= 20 ? 'good' : ''),
   ];
   el('gKpis').innerHTML = cards.join('');
+
+  // Google Ads funnel (req #8)
+  const fcolors = [C.green, C.green, C.accent, C.teal, C.red, '#9CA3AF'];
+  el('gFunnel').innerHTML = (g.funnel || []).map((s, i) =>
+    `<div class="gf-stage"><div class="gf-bar" style="background:${fcolors[i]}22;border-color:${fcolors[i]}"><div class="gf-n">${NUM(s.count)}</div><div class="gf-l">${esc(s.label)}</div><div class="gf-p">${PCT(s.pct)} of orders</div></div>${i < g.funnel.length - 1 ? `<div class="gf-conv">${PCT(g.funnel[i + 1].conv || 0)}<i class="ti ti-chevron-down"></i></div>` : ''}</div>`).join('')
+    || '<div class="empty">No Google Ads orders in this range</div>';
 
   const note = el('gNote'); note.hidden = false;
   if (noSpend) { note.className = 'callout warn'; note.innerHTML = `<i class="ti ti-alert-triangle"></i> <b>No Google Ads spend recorded for this period.</b> ROAS & CPA need spend (from an Expenses "Google Ads" row). Revenue, orders & growth above are real — attributed from <b>Lead Source = "Google Ads"</b>.`; }
@@ -688,7 +727,7 @@ function rHealth() {
     ['Reason', esc(ss.message || '—')],
     ['Spreadsheet ID', '<span class="mono small">' + esc(m.spreadsheetId || '—') + '</span>'],
     ['Last checked', ss.checkedAt ? new Date(ss.checkedAt).toLocaleString() : '—'],
-    ['Reading from', real ? 'in-project Excel copy (live sheet private)' : '—'],
+    ['Reading from', d.source === 'live' ? 'live Google Sheet (gviz)' : real ? 'Excel emergency copy' : '—'],
     ['Audit events', NUM((d.audit || []).length) + ' recorded'],
   ]);
 
@@ -769,15 +808,22 @@ function rSettings() {
     ['Mapping status', '<span class="pill good">all key columns detected</span>'],
   ]);
   el('setMapping').innerHTML = kv(Object.entries(m.detectedColumns).map(([k, v]) => [k, `<span class="mono small ${/NOT FOUND/.test(v) ? 'warn-txt' : ''}">${esc(v)}</span>`]));
-  const lists = d.allTime ? null : null;
-  const opt = m.options;
+  // master Settings lists (single source of truth)
+  const st = d.view.settings || {};
   el('setLists').innerHTML = kv([
-    ['Service types', esc(opt.services.join(', ') || '—')],
-    ['Lead sources', esc(opt.leads.join(', ') || '—')],
-    ['Payment statuses', esc(opt.statuses.join(', ') || '—')],
-    ['Payment methods', esc(opt.methods.join(', ') || '—')],
-    ['Delivery statuses', esc(opt.deliveries.join(', ') || '—')],
+    ['Lead sources', esc((st.leadSources || []).join(', ') || '—')],
+    ['Payment statuses', esc((st.paymentStatus || []).join(', ') || '—')],
+    ['Delivery statuses', esc((st.deliveryStatus || []).join(', ') || '—')],
+    ['Payment methods', esc((st.paymentMethods || []).join(', ') || '—')],
+    ['Service types', esc((st.serviceTypes || []).join(', ') || '—')],
   ]);
+  // settings protection — values found in the sheet but not in Settings
+  const uv = (d.validation.unknownValues) || {};
+  const rows = [];
+  [['leads', 'Lead Source'], ['statuses', 'Payment Status'], ['methods', 'Payment Method'], ['services', 'Service Type']].forEach(([k, label]) =>
+    (uv[k] || []).forEach(x => rows.push([label, `<span class="warn-txt">${esc(x.value)}</span>`, NUM(x.count), '<span class="pill warn">not in Settings</span>'])));
+  el('setUnknown').innerHTML = rows.length ? table(['Category', 'Value (not in Settings)', 'Rows', 'Status'], rows)
+    : '<div class="empty" style="color:var(--green)">✓ Every value in the sheet matches the Settings master — nothing auto-created.</div>';
 }
 function kv(rows) { return rows.map(([k, v]) => `<div class="kvr"><span class="kvk">${esc(k)}</span><span class="kvv">${v}</span></div>`).join(''); }
 
@@ -821,18 +867,22 @@ function buildNotifications() {
   if (ss.state === 'private') ns.push({ id: 'sheet|private', level: 'warning', icon: 'ti-cloud-off', title: 'Google Sheet not connected (private)', detail: 'Open System Health for details', ts: ss.checkedAt || m.lastSync, goto: 'health' });
   return ns;
 }
-function unreadCount() { const r = readSet(); return buildNotifications().filter(n => (n.level === 'warning' || n.level === 'error') && !r.has(n.id)).length; }
+const DISMISS_KEY = 'ats-notif-dismissed';
+function dismissedSet() { try { return new Set(JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]')); } catch (_) { return new Set(); } }
+function saveDismissed(s) { try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...s])); } catch (_) {} }
+function liveNotifs() { const dm = dismissedSet(); return buildNotifications().filter(n => !dm.has(n.id)); }
+function unreadCount() { const r = readSet(); return liveNotifs().filter(n => (n.level === 'warning' || n.level === 'error') && !r.has(n.id)).length; }
 function renderNotifications() {
-  const ns = buildNotifications(), r = readSet(), unread = unreadCount();
+  const ns = liveNotifs(), r = readSet(), unread = unreadCount();
   const badge = el('nbadge');
   if (unread > 0) { badge.hidden = false; badge.textContent = unread > 9 ? '9+' : unread; } else { badge.hidden = true; }
   el('notifList').innerHTML = ns.map((n, i) => {
     const isUnread = (n.level === 'warning' || n.level === 'error') && !r.has(n.id);
     const lv = { info: 'info', warning: 'warn', error: 'bad' }[n.level] || 'neutral';
     const t = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dubai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(n.ts));
-    return `<div class="nrow clickable ${isUnread ? 'unread' : ''}" data-ni="${i}"><div class="nic ${lv}"><i class="ti ${n.icon}"></i></div><div class="nbody"><div class="ntitle">${esc(n.title)}</div><div class="ndetail">${esc(n.detail)} <span class="nrow-go">›</span></div></div><div class="ntime mono">${t}</div></div>`;
-  }).join('') || '<div class="empty">No notifications</div>';
-  // make every notification clickable → navigate + deep-link + mark read
+    return `<div class="nrow clickable ${isUnread ? 'unread' : ''}" data-ni="${i}"><div class="nic ${lv}"><i class="ti ${n.icon}"></i></div><div class="nbody"><div class="ntitle">${esc(n.title)}</div><div class="ndetail">${esc(n.detail)} <span class="nrow-go">›</span></div></div><div class="ntime mono">${t}</div><button class="nrow-x" data-clear="${i}" title="Clear">&times;</button></div>`;
+  }).join('') || '<div class="empty">No notifications · all clear</div>';
+  // clickable → navigate + deep-link + mark read
   el('notifList').querySelectorAll('.nrow[data-ni]').forEach(row => row.addEventListener('click', () => {
     const n = ns[+row.dataset.ni]; if (!n) return;
     const s = readSet(); s.add(n.id); saveRead(s);
@@ -841,10 +891,15 @@ function renderNotifications() {
     if (n.goto) go(n.goto);
     renderNotifications();
   }));
+  // per-item clear (persists)
+  el('notifList').querySelectorAll('[data-clear]').forEach(x => x.addEventListener('click', e => {
+    e.stopPropagation(); const n = ns[+x.dataset.clear]; if (!n) return;
+    const dm = dismissedSet(); dm.add(n.id); saveDismissed(dm); renderNotifications();
+  }));
 }
 function closeDropdowns(except) { ['notifPanel', 'profilePanel'].forEach(id => { if (id !== except) el(id).hidden = true; }); }
 el('bellBtn').addEventListener('click', e => { e.stopPropagation(); const p = el('notifPanel'); const open = p.hidden; closeDropdowns('notifPanel'); p.hidden = !open; if (open) renderNotifications(); });
-el('notifReadAll').addEventListener('click', e => { e.stopPropagation(); const s = readSet(); buildNotifications().forEach(n => s.add(n.id)); saveRead(s); logEvent('info', 'Notifications read', 'Marked all notifications as read'); renderNotifications(); });
+el('notifReadAll').addEventListener('click', e => { e.stopPropagation(); const s = readSet(); liveNotifs().forEach(n => s.add(n.id)); saveRead(s); logEvent('info', 'Notifications read', 'Marked all notifications as read'); renderNotifications(); });
 el('notifPanel').addEventListener('click', e => e.stopPropagation());
 el('profileBtn').addEventListener('click', e => { e.stopPropagation(); const p = el('profilePanel'); const open = p.hidden; closeDropdowns('profilePanel'); if (open) renderProfileMenu(); p.hidden = !open; });
 el('profilePanel').addEventListener('click', e => e.stopPropagation());

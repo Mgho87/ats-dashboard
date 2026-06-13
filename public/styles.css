@@ -414,3 +414,34 @@ body.light .exec-card{background:linear-gradient(160deg,#eef2fb,#fff)}
 .insights-grid .ins-tile{transition:border-color .15s}
 @media(max-width:1100px){.insights-grid{grid-template-columns:repeat(2,1fr)}.cm-grid{grid-template-columns:1fr}}
 @media(max-width:620px){.insights-grid{grid-template-columns:1fr}}
+
+/* ===================== ROUND 2 components ===================== */
+/* google ads funnel (#8) */
+.g-funnel{display:flex;flex-direction:column;align-items:center;gap:0}
+.gf-stage{width:100%;max-width:560px;display:flex;flex-direction:column;align-items:center}
+.gf-bar{width:100%;border:1px solid;border-radius:12px;padding:12px 16px;text-align:center;background:var(--panel2)}
+.gf-stage:nth-child(1) .gf-bar{max-width:100%} .gf-stage:nth-child(2) .gf-bar{max-width:88%} .gf-stage:nth-child(3) .gf-bar{max-width:78%}
+.gf-stage:nth-child(4) .gf-bar{max-width:68%} .gf-stage:nth-child(5) .gf-bar{max-width:58%} .gf-stage:nth-child(6) .gf-bar{max-width:48%}
+.gf-n{font-size:22px;font-weight:800}
+.gf-l{font-size:12px;font-weight:700;color:var(--text)}
+.gf-p{font-size:10.5px;color:var(--muted)}
+.gf-conv{font-size:11px;color:var(--accent2);font-weight:700;display:flex;flex-direction:column;align-items:center;padding:3px 0}
+.gf-conv i{font-size:15px;color:var(--dim)}
+
+/* opportunities center (#4) */
+.opp-tabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px}
+.opp-tab{border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:12px;font-weight:600;padding:7px 12px;border-radius:9px;cursor:pointer}
+.opp-tab:hover{color:var(--text)} .opp-tab.active{color:#fff;background:linear-gradient(135deg,#5B8DEF,#7C5CFC);border-color:transparent}
+.opp-summary{font-size:12.5px;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:12px}
+
+/* client 360 expansion (#5) */
+.cm-section{margin-top:16px}
+.cm-st{font-size:11px;font-weight:800;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:8px}
+.cm-trend{height:46px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:4px 8px}
+#cmName .pill{font-size:11px;vertical-align:middle;margin-left:8px}
+
+/* notification clear (#6) */
+.nrow{position:relative}
+.nrow-x{position:absolute;top:8px;right:10px;background:none;border:none;color:var(--dim);font-size:18px;line-height:1;cursor:pointer;opacity:0;transition:opacity .12s}
+.nrow:hover .nrow-x{opacity:1}
+.nrow-x:hover{color:var(--red)}

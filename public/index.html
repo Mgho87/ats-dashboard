@@ -142,7 +142,13 @@
         <div class="grid-3">
           <div class="card"><h4><i class="ti ti-chart-arrows-vertical"></i> FORECAST</h4><div id="ovForecast"></div></div>
           <div class="card"><h4><i class="ti ti-shield-half"></i> OUTSTANDING RISK</h4><div id="ovRisk"></div></div>
-          <div class="card"><h4><i class="ti ti-target-arrow"></i> TOP OPPORTUNITIES</h4><div id="ovOpps"></div></div>
+          <div class="card"><h4><i class="ti ti-target-arrow"></i> QUICK OPPORTUNITIES</h4><div id="ovOpps"></div></div>
+        </div>
+
+        <!-- TOP OPPORTUNITIES CENTER -->
+        <div class="card"><h4><i class="ti ti-businessplan"></i> TOP OPPORTUNITIES CENTER</h4>
+          <div class="opp-tabs" id="oppTabs"></div>
+          <div id="oppPanel" class="mini-table"></div>
         </div>
 
         <div class="grid-2">
@@ -212,6 +218,7 @@
         </div>
         <div class="kpi-strip kpi-8" id="gKpis"></div>
         <div id="gNote" class="callout" hidden></div>
+        <div class="card"><h4>GOOGLE ADS FUNNEL</h4><div class="g-funnel" id="gFunnel"></div></div>
         <div class="grid-2">
           <div class="card"><h4>REVENUE vs AD SPEND — MONTHLY</h4><div class="chart-box"><canvas id="gRevSpend"></canvas></div></div>
           <div class="card"><h4>ROAS TREND</h4><div class="chart-box"><canvas id="gRoasTrend"></canvas></div></div>
@@ -315,7 +322,11 @@
         </div>
         <div class="grid-2">
           <div class="card"><h4>COLUMN MAPPING</h4><div id="setMapping" class="kv"></div></div>
-          <div class="card"><h4>DETECTED LISTS (Settings tab)</h4><div id="setLists" class="kv"></div></div>
+          <div class="card"><h4>SETTINGS LISTS (master source of truth)</h4><div id="setLists" class="kv"></div></div>
+        </div>
+        <div class="card"><h4><i class="ti ti-shield-lock"></i> SETTINGS PROTECTION — VALUES NOT IN SETTINGS</h4>
+          <div class="callout"><i class="ti ti-info-circle"></i> The dashboard never auto-creates categories. Any value found in the sheet but <b>not defined in the Settings tab</b> is highlighted, reported and logged below — add it to the Settings sheet to make it official.</div>
+          <div id="setUnknown" class="mini-table"></div>
         </div>
       </section>
 
