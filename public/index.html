@@ -32,14 +32,17 @@
       <div class="dd-wrap">
         <button class="icon-btn bell" id="bellBtn" title="Notifications" aria-label="Notifications"><i class="ti ti-bell"></i><span class="nbadge" id="nbadge" hidden>0</span></button>
         <div class="dropdown" id="notifPanel" hidden>
-          <div class="dd-head"><span>Notifications</span><button class="dd-link" id="notifReadAll">Mark all read</button></div>
+          <div class="dd-head"><span>Notifications</span><div class="dd-acts"><button class="dd-link" id="notifReadAll">Mark all read</button><button class="dd-link" id="notifClearAll">Clear all</button></div></div>
+          <div class="nf-filters" id="notifFilters">
+            <button data-nf="all" class="active">All</button><button data-nf="warning">Warnings</button><button data-nf="audit">Audit</button><button data-nf="google">Google&nbsp;Ads</button><button data-nf="collection">Collections</button><button data-nf="system">System</button>
+          </div>
           <div class="dd-body" id="notifList"></div>
         </div>
       </div>
       <div class="dd-wrap">
-        <div class="profile" id="profileBtn"><div class="pavatar">A</div><div class="pmeta"><div class="pn">Administrator</div></div><i class="ti ti-chevron-down pchev"></i></div>
+        <div class="profile" id="profileBtn"><div class="pavatar">M</div><div class="pmeta"><div class="pn">Dashboard Manager</div></div><i class="ti ti-chevron-down pchev"></i></div>
         <div class="dropdown" id="profilePanel" hidden>
-          <div class="dd-head"><span>Administrator</span></div>
+          <div class="dd-head"><span>Dashboard Manager</span></div>
           <div class="dd-body" id="profileMenu"></div>
         </div>
       </div>
@@ -52,6 +55,7 @@
       <nav class="snav" id="snav">
         <a class="active" data-page="overview"><i class="ti ti-layout-dashboard"></i><span>Overview</span></a>
         <a data-page="money"><i class="ti ti-coin"></i><span>Money</span></a>
+        <a data-page="collection"><i class="ti ti-cash-banknote"></i><span>Collection Center</span></a>
         <a data-page="pipeline"><i class="ti ti-route"></i><span>Pipeline</span></a>
         <a data-page="operations"><i class="ti ti-adjustments"></i><span>Operations</span></a>
         <a data-page="clients"><i class="ti ti-users"></i><span>Clients</span></a>
@@ -123,6 +127,7 @@
         <!-- QUICK ACTIONS -->
         <div class="quick-actions" id="quickActions"></div>
 
+        <!-- MAIN KPI CARDS -->
         <section class="hero">
           <div class="hcard h-blue"><div class="hc-ic"><i class="ti ti-cash"></i></div><div class="hc-lbl">TOTAL REVENUE</div><div class="hc-val mono" id="h-rev">—</div><div class="hc-ctx" id="h-rev-ctx"></div><div class="hc-mini" id="h-rev-mini"></div></div>
           <div class="hcard h-green"><div class="hc-ic"><i class="ti ti-wallet"></i></div><div class="hc-lbl">CASH COLLECTED</div><div class="hc-val mono" id="h-paid">—</div><div class="hc-ctx" id="h-paid-ctx"></div><div class="hc-mini" id="h-paid-mini"></div></div>
@@ -130,10 +135,28 @@
           <div class="hcard h-gold"><div class="hc-ic"><i class="ti ti-trending-up"></i></div><div class="hc-lbl">NET PROFIT</div><div class="hc-val mono" id="h-profit">—</div><div class="hc-ctx" id="h-profit-ctx"></div><div class="hc-mini" id="h-profit-mini"></div></div>
         </section>
 
+        <!-- SELECTED RANGE KPI STRIP -->
         <section class="today-bar">
           <div class="tb-h"><i class="ti ti-calendar-event"></i> SELECTED RANGE <span id="today-label"></span></div>
           <div class="today-cells" id="today"></div>
         </section>
+
+        <!-- ============ EXECUTIVE SUMMARY (req #1 — CEO command center) ============ -->
+        <div class="card exec-summary-card"><h4><i class="ti ti-dashboard"></i> EXECUTIVE SUMMARY <span class="dimv small">— today (Asia/Dubai) · this month · live leaders &amp; forecasts</span></h4><div id="execSummary" class="exsum-grid"></div></div>
+
+        <!-- ============ EXECUTIVE CHARTS (req #2) ============ -->
+        <div class="grid-2">
+          <div class="card"><h4>REVENUE TREND — MONTHLY</h4><div class="chart-box"><canvas id="ovTrend"></canvas></div></div>
+          <div class="card"><h4>PAYMENT STATUS</h4><div class="chart-box sm"><canvas id="ovPay"></canvas></div><div id="ovReconcile" class="reconcile"></div></div>
+        </div>
+        <div class="grid-2">
+          <div class="card"><h4>LEAD SOURCE REVENUE</h4><div class="chart-box sm"><canvas id="ovLead"></canvas></div></div>
+          <div class="card"><h4>SERVICE TYPE REVENUE</h4><div id="ovSvc" class="svc-bars"></div></div>
+        </div>
+        <div class="grid-2">
+          <div class="card"><h4>PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="ovMethods"></canvas></div></div>
+          <div class="card"><h4>QUICK HEALTH</h4><div id="ovHealth"></div></div>
+        </div>
 
         <!-- EXECUTIVE INSIGHTS -->
         <div class="card insights-card"><h4><i class="ti ti-bulb"></i> EXECUTIVE INSIGHTS</h4><div class="insights-grid" id="execInsights"></div></div>
@@ -151,15 +174,11 @@
           <div id="oppPanel" class="mini-table"></div>
         </div>
 
-        <div class="grid-2">
-          <div class="card"><h4>REVENUE TREND — MONTHLY</h4><div class="chart-box"><canvas id="ovTrend"></canvas></div></div>
-          <div class="card"><h4>PAYMENT STATUS</h4><div class="chart-box sm"><canvas id="ovPay"></canvas></div><div id="ovReconcile" class="reconcile"></div></div>
-        </div>
-        <div class="grid-3">
-          <div class="card"><h4>LEAD SOURCE REVENUE</h4><div class="chart-box sm"><canvas id="ovLead"></canvas></div></div>
-          <div class="card"><h4>SERVICE TYPE REVENUE</h4><div id="ovSvc" class="svc-bars"></div></div>
-          <div class="card"><h4>QUICK HEALTH</h4><div id="ovHealth"></div></div>
-        </div>
+        <!-- PERIODIC EXECUTIVE MATRIX -->
+        <div class="card"><h4><i class="ti ti-calendar-stats"></i> THIS PERIOD AT A GLANCE — TODAY · YESTERDAY · THIS WEEK · THIS MONTH</h4><div id="periodicMatrix" class="pmx"></div></div>
+
+        <!-- NEEDS ATTENTION (req #2 — the VERY BOTTOM / final section) -->
+        <div class="card attention-card" id="attentionCard" hidden><h4><i class="ti ti-alert-hexagon"></i> NEEDS ATTENTION — PRIORITISED</h4><div id="attentionList" class="attn-list"></div></div>
       </section>
 
       <!-- ============ MONEY ============ -->
@@ -170,12 +189,23 @@
           <div class="card"><h4>REVENUE vs EXPENSES — MONTHLY</h4><div class="chart-box"><canvas id="moTrend"></canvas></div></div>
           <div class="card"><h4>DAILY REVENUE</h4><div class="chart-box"><canvas id="moDaily"></canvas></div></div>
         </div>
+        <!-- req #22: ordered money sections -->
         <div class="card"><h4>1 · OUTSTANDING — PAYMENT AGEING (collections priority)</h4><div id="moAgeing" class="mini-table tall"></div></div>
-        <div class="card"><h4>2 · TOP PAYING CLIENTS</h4><div id="moTopClients" class="mini-table tall"></div></div>
+        <div class="card"><h4>2 · LARGEST OUTSTANDING CLIENTS</h4><div id="moLargestOut" class="mini-table"></div></div>
+        <div class="card"><h4>3 · COLLECTION FORECAST</h4><div id="moCollForecast"></div></div>
+        <div class="card"><h4>4 · TOP PAYING CLIENTS</h4><div id="moTopClients" class="mini-table tall"></div></div>
         <div class="grid-2">
-          <div class="card"><h4>3 · EXPENSES BREAKDOWN</h4><div id="moExpenses" class="mini-table"></div></div>
-          <div class="card"><h4>4 · PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="moMethods"></canvas></div></div>
+          <div class="card"><h4>5 · EXPENSES BREAKDOWN</h4><div id="moExpenses" class="mini-table"></div></div>
+          <div class="card"><h4>6 · PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="moMethods"></canvas></div></div>
         </div>
+      </section>
+
+      <!-- ============ COLLECTION CENTER (req #7) ============ -->
+      <section class="page" id="page-collection">
+        <div class="page-head"><div><h1>Collection Center</h1><p>Outstanding receivables by age — prioritise collection effort</p></div></div>
+        <div class="kpi-strip" id="collKpis"></div>
+        <div class="card"><h4><i class="ti ti-clock-dollar"></i> AGEING BUCKETS</h4><div id="collBuckets" class="coll-buckets"></div></div>
+        <div class="card"><h4><i class="ti ti-users"></i> CLIENTS WITH OUTSTANDING — BY AMOUNT</h4><div id="collClients" class="mini-table tall"></div></div>
       </section>
 
       <!-- ============ PIPELINE ============ -->
@@ -216,22 +246,20 @@
         <div class="page-head"><div><h1>Google Ads</h1><p>Executive marketing performance center — ROAS, CPA, growth & attribution</p></div>
           <div class="g-score" id="gScore"></div>
         </div>
+        <!-- req #3: main KPI + quality blocks kept at the top, before the detailed charts -->
         <div class="kpi-strip kpi-8" id="gKpis"></div>
         <div id="gNote" class="callout" hidden></div>
+        <div class="card"><h4><i class="ti ti-shield-check"></i> GOOGLE ADS LEAD QUALITY <span class="dimv small">— quality of the leads, separate from ROAS</span></h4><div id="gQuality" class="gqual"></div></div>
         <div class="card"><h4>GOOGLE ADS FUNNEL</h4><div class="g-funnel" id="gFunnel"></div></div>
         <div class="grid-2">
           <div class="card"><h4>REVENUE vs AD SPEND — MONTHLY</h4><div class="chart-box"><canvas id="gRevSpend"></canvas></div></div>
-          <div class="card"><h4>ROAS TREND</h4><div class="chart-box"><canvas id="gRoasTrend"></canvas></div></div>
+          <div class="card" id="gRoasCard"><h4>ROAS TREND</h4><div class="chart-box" id="gRoasBox"><canvas id="gRoasTrend"></canvas></div></div>
         </div>
         <div class="grid-2">
           <div class="card"><h4>ORDERS vs REVENUE — DAILY</h4><div class="chart-box"><canvas id="gOrdersRev"></canvas></div></div>
           <div class="card"><h4>GOOGLE ADS REVENUE vs OTHER SOURCES</h4><div class="chart-box sm"><canvas id="gShare"></canvas></div></div>
         </div>
-        <div class="grid-3">
-          <div class="card"><h4>REVENUE BY SERVICE TYPE</h4><div class="chart-box sm"><canvas id="gByService"></canvas></div></div>
-          <div class="card"><h4>REVENUE BY PAYMENT STATUS</h4><div class="chart-box sm"><canvas id="gByStatus"></canvas></div></div>
-          <div class="card"><h4>REVENUE BY DELIVERY STATUS</h4><div class="chart-box sm"><canvas id="gByDelivery"></canvas></div></div>
-        </div>
+        <div class="card"><h4>REVENUE BY SERVICE TYPE</h4><div class="chart-box sm"><canvas id="gByService"></canvas></div></div>
         <div class="grid-2">
           <div class="card"><h4>TOP CLIENTS — GOOGLE ADS</h4><div id="gTopClients" class="mini-table"></div></div>
           <div class="card"><h4>TOP SERVICES — GOOGLE ADS</h4><div id="gTopServices" class="mini-table"></div></div>
@@ -249,14 +277,16 @@
 
       <!-- ============ REPORTS ============ -->
       <section class="page" id="page-reports">
-        <div class="page-head"><div><h1>Reports</h1><p>Export & detailed transaction register</p></div>
+        <div class="page-head"><div><h1>Reporting Center</h1><p>Use this page to export filtered business reports based on the selected date range.</p></div>
           <div class="head-actions">
-            <button class="btn" id="expCsv"><i class="ti ti-file-spreadsheet"></i> CSV</button>
-            <button class="btn" id="expExcel"><i class="ti ti-table"></i> Excel</button>
-            <button class="btn" id="expPdf"><i class="ti ti-file-type-pdf"></i> PDF / Print</button>
+            <button class="btn" id="expCsv"><i class="ti ti-file-spreadsheet"></i> Export CSV</button>
+            <button class="btn" id="expExcel"><i class="ti ti-table"></i> Export Excel</button>
+            <button class="btn" id="expPdf"><i class="ti ti-file-type-pdf"></i> Export PDF / Print</button>
           </div>
         </div>
+        <div class="callout"><i class="ti ti-info-circle"></i> Pick a report below. Every report reflects the <b>currently selected date range &amp; filters</b> from the bar above. Use <b>Export CSV / Excel</b> for the raw transaction data, or <b>Export PDF / Print</b> for the on-screen report.</div>
         <div class="kpi-strip" id="repKpis"></div>
+        <div class="rep-tabs" id="repTabs"></div>
         <div class="card"><h4 id="repTitle">TRANSACTION REGISTER</h4><div id="repTable" class="mini-table tall"></div></div>
       </section>
 
@@ -265,16 +295,15 @@
         <div class="page-head"><div><h1>Audit Log</h1><p>Forensic record of every business-data change — what changed, when, and the value before vs after</p></div>
           <div class="head-actions"><button class="btn" id="auditExport"><i class="ti ti-download"></i> Export log (CSV)</button></div>
         </div>
+        <div class="callout"><i class="ti ti-calendar-event"></i> The Audit Log follows the <b>global date filter</b> above — change the range there (Today / Yesterday / Last 7 / 30 / This Month / Last Month / All Time / Custom) and the log + summary cards update to match. Use the controls below to narrow within that range.</div>
         <div class="kpi-strip" id="auditKpis"></div>
         <div class="audit-filters">
-          <div class="af-presets" id="afTime">
-            <button data-af="today" class="active">Today</button>
-            <button data-af="yesterday">Yesterday</button>
-            <button data-af="7">Last 7 days</button>
-            <button data-af="all">All</button>
+          <div class="af-modes" id="afMode" title="Filter the log by when the change was detected, or by the transaction's own date">
+            <button data-mode="detect" class="active">Change Detection Date</button>
+            <button data-mode="txn">Transaction Date</button>
           </div>
+          <select id="afType" class="fsel"><option value="all">All change types</option><option>CREATE</option><option>UPDATE</option><option>DELETE</option><option>STATUS_CHANGE</option><option>VALUE_CHANGE</option><option value="SYSTEM_EVENT">System events</option></select>
           <select id="afSeverity" class="fsel"><option value="all">All severity</option><option>INFO</option><option>WARNING</option><option>CRITICAL</option></select>
-          <select id="afType" class="fsel"><option value="all">All change types</option><option>CREATE</option><option>UPDATE</option><option>DELETE</option><option>STATUS_CHANGE</option><option>VALUE_CHANGE</option><option>SYSTEM_EVENT</option></select>
           <select id="afUser" class="fsel"><option value="all">All users</option></select>
           <input id="afRef" class="fsearch" placeholder="Search reference / client / column…">
         </div>
@@ -299,18 +328,71 @@
             <div id="healthSource" class="kv"></div>
             <div id="healthConn" class="kv"></div>
           </div>
-          <div id="healthDates" class="kv kv-top"></div>
         </div>
         <div class="card"><h4><i class="ti ti-refresh"></i> D · SYNC EVENTS</h4>
           <div class="log-head"><span>Time</span><span>Event</span><span>Status</span><span>Details</span></div>
           <div id="healthSync" class="log-table"></div>
         </div>
         <div class="card"><h4><i class="ti ti-checks"></i> E · VALIDATION RESULTS</h4><div id="healthChecks" class="checks"></div></div>
+        <!-- req #5: technical Date & Filter Diagnostics moved to the very bottom -->
+        <div class="card"><h4><i class="ti ti-bug"></i> F · DATE &amp; FILTER DIAGNOSTICS <span class="dimv small">— technical reference</span></h4><div id="healthDates" class="kv kv-top"></div></div>
       </section>
 
       <!-- ============ SETTINGS ============ -->
       <section class="page" id="page-settings">
-        <div class="page-head"><div><h1>Settings</h1><p>Data source, sync status & column mapping</p></div></div>
+        <div class="page-head"><div><h1>Settings</h1><p>Control how the dashboard behaves, displays and protects your data</p></div>
+          <div class="head-actions"><button class="btn" id="setReset"><i class="ti ti-rotate"></i> Reset to defaults</button></div>
+        </div>
+
+        <!-- req #9: Dashboard behaviour preferences (persisted to this browser) -->
+        <div class="card"><h4><i class="ti ti-adjustments-cog"></i> DASHBOARD PREFERENCES <span class="dimv small">— saved to this browser</span></h4>
+          <div class="prefs-grid">
+            <label class="pref"><span class="pref-l">Default landing page</span>
+              <select id="prefLanding" class="fsel">
+                <option value="overview">Overview</option><option value="money">Money</option>
+                <option value="collection">Collection Center</option><option value="pipeline">Pipeline</option>
+                <option value="operations">Operations</option><option value="clients">Clients</option>
+                <option value="google">Google Ads</option><option value="reports">Reports</option>
+                <option value="audit">Audit Log</option><option value="health">System Health</option>
+              </select>
+              <span class="pref-h">Page shown when you open the dashboard fresh.</span>
+            </label>
+            <label class="pref"><span class="pref-l">Default date range</span>
+              <select id="prefRange" class="fsel">
+                <option value="today">Today</option><option value="yesterday">Yesterday</option>
+                <option value="7">Last 7 Days</option><option value="30">Last 30 Days</option>
+                <option value="month">This Month</option><option value="lastmonth">Last Month</option>
+                <option value="all">All Time</option>
+              </select>
+              <span class="pref-h">Range applied when the dashboard first loads.</span>
+            </label>
+            <label class="pref"><span class="pref-l">Remember last view</span>
+              <select id="prefRemember" class="fsel"><option value="1">On — restore my last page &amp; filters</option><option value="0">Off — always use defaults above</option></select>
+              <span class="pref-h">Restores your page, date range &amp; filters after a browser refresh.</span>
+            </label>
+            <label class="pref"><span class="pref-l">Theme</span>
+              <select id="prefTheme" class="fsel"><option value="dark">Dark</option><option value="light">Light</option></select>
+              <span class="pref-h">Switches the dashboard colour scheme.</span>
+            </label>
+            <label class="pref"><span class="pref-l">Layout density</span>
+              <select id="prefDensity" class="fsel"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select>
+              <span class="pref-h">Compact reduces padding to fit more on screen.</span>
+            </label>
+            <label class="pref"><span class="pref-l">Notifications</span>
+              <select id="prefNotif" class="fsel"><option value="all">All notifications</option><option value="alerts">Only warnings &amp; alerts</option></select>
+              <span class="pref-h">Choose how much the bell shows. Warnings &amp; errors are always kept.</span>
+            </label>
+          </div>
+          <div id="prefSaved" class="pref-saved"></div>
+        </div>
+
+        <!-- req #9 + #2/#3: fixed colour identity used across all charts -->
+        <div class="grid-2">
+          <div class="card"><h4><i class="ti ti-palette"></i> LEAD SOURCE COLORS</h4><div id="setLeadColors" class="swatches"></div></div>
+          <div class="card"><h4><i class="ti ti-palette"></i> PAYMENT METHOD COLORS</h4><div id="setMethodColors" class="swatches"></div></div>
+        </div>
+        <div class="card"><h4><i class="ti ti-palette"></i> SERVICE &amp; STATUS CHART COLORS</h4><div id="setChartColors" class="swatches"></div></div>
+
         <div class="grid-2">
           <div class="card"><h4>DATA SOURCE</h4><div id="setSource" class="kv"></div>
             <div class="upload-row">

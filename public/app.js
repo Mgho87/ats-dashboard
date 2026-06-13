@@ -17,8 +17,56 @@ function leadColor(name) {
   if (s.includes('client') || s.includes('our')) return C.blue;
   return C.accent; // Other / everything else = purple
 }
+// fixed payment-method color mapping (req #2): Bank Transfer=Blue, Payment Link=Green, Cash=Orange, Other=Gray
+function methodColor(name) {
+  const s = String(name || '').toLowerCase();
+  if (s.includes('bank')) return C.blue;
+  if (s.includes('link')) return C.green;
+  if (s.includes('cash')) return C.orange;
+  return '#8A97B5'; // Other = gray
+}
+// fixed service-type color mapping (req #3): Legal=Blue, MOFA=Green, Embassy=Violet, MOJ=Teal; others = lighter secondaries (no strong pink for majors)
+const SERVICE_SECONDARY = ['#9B7BFF', '#22B8C9', '#E6B84A', '#5B8DEF', '#7FB069', '#C792EA', '#94A3B8'];
+function serviceColor(name, i) {
+  const s = String(name || '').toLowerCase();
+  if (s.includes('legal')) return C.blue;            // Legal Translation = Blue
+  if (s.includes('mofa')) return C.green;            // MOFA = Green
+  if (s.includes('embassy')) return C.accent;        // Embassy = Purple
+  if (s.includes('moj') || s.includes('justice')) return '#A855F7'; // MOJ = Violet
+  if (s.includes('court') || s.includes('immigration')) return C.teal;
+  return SERVICE_SECONDARY[(i || 0) % SERVICE_SECONDARY.length]; // others = neutral/lighter secondaries
+}
 
 const state = { data: null, filter: { range: 'all', from: '', to: '', service: 'All', lead: 'All' }, page: 'overview' };
+
+/* ---------- preferences + view persistence (req #7, #9) ---------- */
+const PREFS_KEY = 'ats-prefs', VIEW_KEY = 'ats-view';
+const PREF_DEFAULTS = { landing: 'overview', range: 'all', remember: '1', density: 'comfortable', notif: 'all' };
+function getPrefs() { try { return Object.assign({}, PREF_DEFAULTS, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); } catch (_) { return Object.assign({}, PREF_DEFAULTS); } }
+function setPref(k, v) { const p = getPrefs(); p[k] = v; try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch (_) {} }
+function applyPrefs() { document.body.classList.toggle('compact', getPrefs().density === 'compact'); }
+function saveView() {
+  if (getPrefs().remember !== '1') return;
+  try { localStorage.setItem(VIEW_KEY, JSON.stringify({ page: state.page, range: state.filter.range, from: state.filter.from, to: state.filter.to, service: state.filter.service, lead: state.filter.lead })); } catch (_) {}
+}
+// Decide the initial page + filter BEFORE the first load() (restores last view, or applies defaults).
+function restoreView() {
+  const p = getPrefs(); applyPrefs();
+  let v = null;
+  if (p.remember === '1') { try { v = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); } catch (_) { v = null; } }
+  if (!v) v = { page: p.landing, range: p.range, service: 'All', lead: 'All', from: '', to: '' };
+  state.page = v.page || 'overview';
+  state.filter.service = v.service || 'All';
+  state.filter.lead = v.lead || 'All';
+  state.filter.range = v.range || 'all';
+  // reflect the page in the DOM immediately so the correct section is shown once loading clears
+  document.querySelectorAll('.page').forEach(s => s.classList.toggle('active', s.id === 'page-' + state.page));
+  document.querySelectorAll('[data-page]').forEach(a => a.classList.toggle('active', a.dataset.page === state.page));
+  // reflect the date range
+  document.querySelectorAll('#presets button').forEach(x => x.classList.toggle('active', x.dataset.range === state.filter.range));
+  if (state.filter.range === 'custom') { el('fFrom').value = v.from || ''; el('fTo').value = v.to || ''; state.filter.from = v.from || ''; state.filter.to = v.to || ''; }
+  else { const r = computeRange(state.filter.range); el('fFrom').value = r.from; el('fTo').value = r.to; state.filter.from = r.from; state.filter.to = r.to; }
+}
 
 /* ---------- clock ---------- */
 function tickClock() {
@@ -44,10 +92,11 @@ function go(page) {
   el('sidebar').classList.remove('open');
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (state.data) renderPage(page);
+  saveView(); // req #7: remember current page
 }
 document.querySelectorAll('[data-page]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); go(a.dataset.page); }));
 el('ham').addEventListener('click', () => el('sidebar').classList.toggle('open'));
-el('refreshBtn').addEventListener('click', () => { logEvent('info', 'Refresh clicked', 'Manual data refresh requested'); load(true); });
+el('refreshBtn').addEventListener('click', () => { logEvent('info', 'Refresh clicked', 'Manual data refresh requested'); load(true, true); });
 
 /* ---------- date presets ---------- */
 function dubaiToday() { return (state.data && state.data.meta.todayDubai) || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dubai' }).format(new Date()); }
@@ -102,6 +151,7 @@ function applyFilter() {
     + (state.filter.service !== 'All' ? ' · ' + state.filter.service : '')
     + (state.filter.lead !== 'All' ? ' · ' + state.filter.lead : '');
   logEvent('info', 'Date filter changed', `${label} (${state.filter.from} → ${state.filter.to})`);
+  saveView(); // req #7: remember current filters
   load(false);
 }
 
@@ -123,6 +173,12 @@ function spark(values, color, h = 46) {
   const pts = v.map((y, i) => [(i / (v.length - 1)) * w, h - 3 - ((y - min) / rng) * (h - 8)]);
   const d = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
   return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="100%" height="${h}"><path d="${d} L${w} ${h} L0 ${h} Z" fill="${color}22"/><path d="${d}" fill="none" stroke="${color}" stroke-width="2.5"/></svg>`;
+}
+// compact coloured mini-bars for the Net Profit sidebar (req #10)
+function miniBars(values, color) {
+  const v = (values || []).slice(-8).map(Number); if (!v.length) return '';
+  const w = 120, h = 26, max = Math.max(...v, 1), bw = w / v.length;
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none">` + v.map((y, i) => { const bh = Math.max(2, (y / max) * (h - 3)); return `<rect x="${(i * bw + 1).toFixed(1)}" y="${(h - bh).toFixed(1)}" width="${Math.max(1.5, bw - 2).toFixed(1)}" height="${bh.toFixed(1)}" rx="1.5" fill="${color}"/>`; }).join('') + `</svg>`;
 }
 function execBars(values) {
   const v = (values || []).slice(-8).map(Number); if (!v.length) return '';
@@ -161,11 +217,11 @@ function renderChrome() {
   el('execProfit').textContent = AED(at.netProfit);
   el('execProfit').style.color = at.netProfit >= 0 ? 'var(--green)' : 'var(--red)';
   el('execMargin').textContent = PCT(at.profitMargin);
-  el('execRev').textContent = AED(at.totalRevenue);
-  el('execExp').textContent = AED(at.totalExpenses);
-  // mini trend charts (req #12) — revenue & expenses monthly sparklines
-  if (el('execRevSpark')) el('execRevSpark').innerHTML = spark((d.allTime.revenueTrend || []).map(r => r.revenue), C.green, 26);
-  if (el('execExpSpark')) el('execExpSpark').innerHTML = spark((d.allTime.expenseTrend || []).map(r => r.expense), C.red, 26);
+  // req #10: compact amounts (AED 53.9K) + visual mini-bars instead of long numbers in tiny boxes
+  el('execRev').textContent = AEDk(at.totalRevenue);
+  el('execExp').textContent = AEDk(at.totalExpenses);
+  if (el('execRevSpark')) el('execRevSpark').innerHTML = miniBars((d.allTime.revenueTrend || []).map(r => r.revenue), C.green);
+  if (el('execExpSpark')) el('execExpSpark').innerHTML = miniBars((d.allTime.expenseTrend || []).map(r => r.expense), C.red);
 
   // audit badge mirrors real validation warning count
   const warn = (d.validation && (d.validation.missingAmounts + d.validation.brokenStatus + (d.validation.reconciles ? 0 : 1))) || 0;
@@ -189,7 +245,9 @@ function renderChrome() {
   const st = (v.settings || {});
   const mergeU = (a, b) => [...new Set([...(a || []), ...(b || [])].filter(Boolean))];
   const services = mergeU(st.serviceTypes, m.options.services);
-  const leadsList = mergeU(st.leadSources, m.options.leads);
+  // req #2/#9: lead dropdown from the Settings master only (unknown sources like "Direct" are
+  // never offered as a filterable option — they are logged in Settings Protection instead).
+  const leadsList = (st.leadSources && st.leadSources.length) ? st.leadSources.slice() : ['Google Ads', 'Our Client', 'New', 'Walk-in Client', 'Other'];
   const optSig = services.join('|') + '##' + leadsList.join('|');
   if (el('fService').dataset.sig !== optSig && (services.length || leadsList.length)) {
     const curS = el('fService').value || v.filter.service, curL = el('fLead').value || v.filter.lead;
@@ -216,7 +274,7 @@ function renderChrome() {
 }
 
 function renderPage(page) {
-  ({ overview: rOverview, money: rMoney, pipeline: rPipeline, operations: rOps, clients: rClients, google: rGoogle, reports: rReports, audit: rAudit, health: rHealth, settings: rSettings }[page] || (() => {}))();
+  ({ overview: rOverview, money: rMoney, collection: rCollection, pipeline: rPipeline, operations: rOps, clients: rClients, google: rGoogle, reports: rReports, audit: rAudit, health: rHealth, settings: rSettings }[page] || (() => {}))();
 }
 
 /* ---------------- OVERVIEW ---------------- */
@@ -259,6 +317,9 @@ function rOverview() {
   const leads = v.leadSources.slice(0, 6);
   draw('ovLead', { type: 'doughnut', data: { labels: leads.map(l => l.name), datasets: [{ data: leads.map(l => l.revenue), backgroundColor: leads.map(l => leadColor(l.name)), borderWidth: 0 }] }, options: doughnut() });
   el('ovSvc').innerHTML = bars(v.topServices.slice(0, 6).map(s => ({ name: s.name, value: s.revenue })), null, i => PCT(k.totalRevenue ? i.value / k.totalRevenue * 100 : 0));
+  // PAYMENT METHODS (req #2) — fixed colors, on Overview upper chart area
+  const ovpm = (v.paymentMethods || []).filter(p => p.value > 0);
+  draw('ovMethods', { type: 'doughnut', data: { labels: ovpm.map(p => p.name), datasets: [{ data: ovpm.map(p => p.value), backgroundColor: ovpm.map(p => methodColor(p.name)), borderWidth: 0 }] }, options: doughnut() });
 
   const margin = k.profitMargin, coll = k.collectionRate;
   el('ovHealth').innerHTML = [
@@ -269,8 +330,106 @@ function rOverview() {
     healthRow('Reconciliation', rec.reconciles ? 'Balanced' : 'Gap', rec.reconciles ? 'good' : 'bad'),
   ].join('');
   renderQuickActions();
+  renderExecSummary();
+  renderPeriodic();
+  renderAttention();
   renderInsights();
   renderOpportunities();
+}
+
+/* ---------------- EXECUTIVE SUMMARY (req #1 — CEO command center) ---------------- */
+function renderExecSummary() {
+  if (!el('execSummary')) return;
+  const v = state.data.view, s = v.execSummary || {}, t = s.today || {};
+  const lp = s.largestPaidClient, lu = s.largestUnpaidClient;
+  const risk = s.outstandingRiskScore || 0;
+  const riskTone = risk >= 60 ? 'bad' : risk >= 30 ? 'warn' : 'good';
+  const w = (ic, tone, label, value, sub) => `<div class="exsum"><div class="exsum-ic ${tone}"><i class="ti ${ic}"></i></div><div class="exsum-b"><div class="exsum-l">${esc(label)}</div><div class="exsum-v mono">${value}</div><div class="exsum-s">${esc(sub || '')}</div></div></div>`;
+  el('execSummary').innerHTML = [
+    w('ti-cash', 'ic-blue', "Today's Revenue", AED(t.revenue), NUM(t.orders) + ' orders'),
+    w('ti-shopping-cart', 'ic-blue', "Today's Orders", NUM(t.orders), 'placed today'),
+    w('ti-wallet', 'ic-green', "Today's Collections", AED(t.collections), 'cash received'),
+    w('ti-alert-triangle', 'ic-red', "Today's Outstanding", AED(t.outstanding), 'billed, unpaid'),
+    w('ti-user-plus', 'ic-teal', 'New Clients Today', NUM(t.newClients), 'first-ever order'),
+    w('ti-users', 'ic-purple', 'Returning Clients Today', NUM(t.returningClients), 'ordered before'),
+    w('ti-brand-google', 'ic-green', 'Google Ads Revenue Today', AED(t.googleRevenue), NUM(t.googleOrders) + ' orders'),
+    w('ti-brand-google', 'ic-green', 'Google Ads Orders Today', NUM(t.googleOrders), 'attributed'),
+    w('ti-user-dollar', 'ic-green', 'Largest Paid Client', lp ? esc(lp.client) : '—', lp ? AED(lp.paid) + ' paid' : ''),
+    w('ti-user-exclamation', 'ic-red', 'Largest Outstanding Client', lu && lu.outstanding > 0 ? esc(lu.client) : '—', lu ? AED(lu.outstanding) + ' owed' : ''),
+    w('ti-arrow-up-right', 'ic-blue', 'Highest Order Today', AED(t.highestOrder), 'top single order'),
+    w('ti-award', 'ic-green', 'Best Service This Month', s.bestServiceMonth ? esc(s.bestServiceMonth.name) : '—', s.bestServiceMonth ? AED(s.bestServiceMonth.revenue) : ''),
+    w('ti-flame', 'ic-purple', 'Best Lead Source This Month', s.bestLeadMonth ? esc(s.bestLeadMonth.name) : '—', s.bestLeadMonth ? AED(s.bestLeadMonth.revenue) : ''),
+    w('ti-cash-banknote', 'ic-green', 'Collection Forecast', s.collectionForecast == null ? '—' : AED(s.collectionForecast), 'next 30 days'),
+    w('ti-chart-arrows-vertical', 'ic-blue', 'Revenue Forecast', s.revenueForecast == null ? '—' : AED(s.revenueForecast), 'month-end run-rate'),
+    `<div class="exsum"><div class="exsum-ic ${riskTone === 'bad' ? 'ic-red' : riskTone === 'warn' ? 'ic-orange' : 'ic-green'}"><i class="ti ti-shield-half"></i></div><div class="exsum-b"><div class="exsum-l">Outstanding Risk Score</div><div class="exsum-v mono">${NUM(risk)}<span class="exsum-x">/100</span></div><div class="exsum-s ${riskTone === 'bad' ? 'risk-high' : riskTone === 'warn' ? 'risk-medium' : 'good-txt'}">${risk >= 60 ? 'High risk' : risk >= 30 ? 'Moderate' : 'Low risk'}</div></div></div>`,
+  ].join('');
+}
+
+/* ---------------- PERIODIC EXECUTIVE MATRIX (req #1) ---------------- */
+function renderPeriodic() {
+  if (!el('periodicMatrix')) return;
+  const p = state.data.view.periodic || {};
+  const cols = [['Today', p.today], ['Yesterday', p.yesterday], ['This Week', p.week], ['This Month', p.month]];
+  const rows = [
+    ['Revenue', d => AED(d.revenue), 'ic-blue'], ['Collections', d => AED(d.collections), 'ic-green'],
+    ['Outstanding', d => AED(d.outstanding), 'ic-red'], ['New Clients', d => NUM(d.newClients), 'ic-teal'],
+    ['Google Ads Clients', d => NUM(d.googleClients), 'ic-purple'],
+  ];
+  let h = '<table class="pmx-table"><thead><tr><th>Metric</th>' + cols.map(c => `<th>${c[0]}</th>`).join('') + '</tr></thead><tbody>';
+  h += rows.map(r => `<tr><td class="pmx-m"><span class="pmx-dot ${r[2]}"></span>${r[0]}</td>` + cols.map(c => `<td class="mono">${c[1] ? r[1](c[1]) : '—'}</td>`).join('') + '</tr>').join('');
+  h += '</tbody></table>';
+  const hd = p.highestRevenueDay, ld = p.lowestRevenueDay;
+  h += `<div class="pmx-foot"><span><i class="ti ti-arrow-up-right"></i> Highest revenue day: <b>${hd ? esc(hd.date) + ' · ' + AED(hd.revenue) : '—'}</b></span><span><i class="ti ti-arrow-down-right"></i> Lowest revenue day: <b>${ld ? esc(ld.date) + ' · ' + AED(ld.revenue) : '—'}</b></span></div>`;
+  el('periodicMatrix').innerHTML = h;
+}
+
+/* ---------------- NEEDS ATTENTION PANEL (req #8) ---------------- */
+function renderAttention() {
+  if (!el('attentionCard')) return;
+  const d = state.data, v = d.view, vd = d.validation, k = v.kpis, col = v.collection || {}, rk = v.risk || {}, ins = v.insights || {};
+  const items = []; const add = (lvl, ic, title, detail, goto) => items.push({ lvl, ic, title, detail, goto });
+  if (d.source === 'error') add(3, 'ti-plug-connected-x', 'Google Sheet not connected', 'Dashboard is showing no data', 'health');
+  if (!vd.reconciles) add(3, 'ti-alert-octagon', 'Reconciliation gap ' + AEDk(vd.gap), 'Paid + Outstanding ≠ Total', 'audit');
+  if (col.over90 > 0) add(3, 'ti-clock-exclamation', AED(col.over90) + ' overdue 90+ days', 'High-risk receivables', 'collection');
+  if (rk.high) add(2, 'ti-shield-x', NUM(rk.high) + ' high-risk unpaid orders', AEDk(rk.highAmt) + ' at risk', 'collection');
+  if (col.over60 > 0) add(2, 'ti-clock-dollar', AED(col.over60) + ' overdue 60+ days', 'Chase these receivables', 'collection');
+  const unkLeads = (vd.unknownValues && vd.unknownValues.leads) || [];
+  if (unkLeads.length) add(2, 'ti-flag-question', unkLeads.length + ' unknown lead source(s)', 'Not in Settings: ' + unkLeads.map(x => x.value).join(', '), 'settings');
+  if ((v.duplicates || []).length) add(2, 'ti-copy', NUM(v.duplicates.length) + ' possible duplicate records', 'Same date+client+amount+ref', 'audit');
+  if (k.collectionRate < 50 && k.totalRevenue > 0) add(2, 'ti-percentage', 'Collection rate low (' + PCT(k.collectionRate) + ')', 'Below 50% — push collections', 'collection');
+  if (vd.brokenStatus) add(1, 'ti-alert-triangle', NUM(vd.brokenStatus) + ' statuses off Settings list', 'Correct or add to Settings', 'settings');
+  if (ins.largestUnpaidClient && ins.largestUnpaidClient.outstanding > 0) add(1, 'ti-user-exclamation', 'Largest unpaid: ' + ins.largestUnpaidClient.client, AED(ins.largestUnpaidClient.outstanding) + ' owed', 'collection');
+  items.sort((a, b) => b.lvl - a.lvl);
+  el('attentionCard').hidden = false;
+  const lvc = { 3: 'bad', 2: 'warn', 1: 'info' };
+  el('attentionList').innerHTML = items.length
+    ? items.slice(0, 8).map((it, i) => `<div class="attn-row attn-${lvc[it.lvl]} clickable" data-attn="${i}"><span class="attn-ic"><i class="ti ${it.ic}"></i></span><div class="attn-b"><div class="attn-t">${esc(it.title)}</div><div class="attn-s">${esc(it.detail)}</div></div><span class="attn-go">›</span></div>`).join('')
+    : '<div class="empty" style="color:var(--green)">✓ Nothing needs attention — all clear</div>';
+  el('attentionList').querySelectorAll('[data-attn]').forEach(r => r.addEventListener('click', () => { const it = items[+r.dataset.attn]; if (it && it.goto) go(it.goto); }));
+}
+
+/* ---------------- COLLECTION CENTER (req #7) ---------------- */
+function rCollection() {
+  const v = state.data.view, c = v.collection || {};
+  el('collKpis').innerHTML = [
+    kpi('Total Outstanding', AED(c.totalOutstanding || 0), NUM(c.clientsOwing || 0) + ' clients owing', (c.totalOutstanding || 0) > 0 ? 'warn' : 'good'),
+    kpi('Due Now (≤7d)', AED(c.dueWeek || 0), 'current receivables'),
+    kpi('Due This Month (≤30d)', AED(c.dueMonth || 0), 'collect this month'),
+    kpi('Over 30 Days', AED(c.over30 || 0), 'ageing', (c.over30 || 0) > 0 ? 'warn' : 'good'),
+    kpi('Over 60 Days', AED(c.over60 || 0), 'follow up', (c.over60 || 0) > 0 ? 'warn' : 'good'),
+    kpi('Over 90 Days', AED(c.over90 || 0), 'high risk', (c.over90 || 0) > 0 ? 'bad' : 'good'),
+  ].join('');
+  const maxA = Math.max(...((c.buckets || []).map(b => b.amount)), 1);
+  el('collBuckets').innerHTML = (c.buckets || []).map(b => `<div class="cb-row"><span class="cb-l">${esc(b.label)}</span><div class="cb-track"><div class="cb-fill ${b.key === 'd90p' ? 'bad' : b.key === 'd61_90' ? 'warn' : ''}" style="width:${(b.amount / maxA * 100).toFixed(0)}%"></div></div><span class="cb-v mono">${AED(b.amount)} · ${NUM(b.count)}</span></div>`).join('') || '<div class="empty" style="color:var(--green)">✓ No outstanding receivables</div>';
+  el('collClients').innerHTML = table(['Client', 'Outstanding', 'Oldest Age', 'Invoices', 'Source', 'Actions'],
+    (c.clients || []).slice(0, 60).map(cl => [
+      `<span class="lk" data-client="${esc(cl.client)}">${esc(cl.client)}</span>`,
+      `<span class="warn-txt">${AED(cl.outstanding)}</span>`,
+      `<b class="${cl.oldestAge > 90 ? 'risk-high' : cl.oldestAge > 30 ? 'risk-medium' : ''}">${NUM(cl.oldestAge)}d</b>`,
+      NUM(cl.invoices), esc(cl.lead),
+      `<button class="mini-btn" data-open="${esc(cl.client)}">Open Client</button>`,
+    ]));
+  el('collClients').querySelectorAll('[data-client],[data-open]').forEach(s => s.addEventListener('click', () => openClient(s.dataset.client || s.dataset.open)));
 }
 function healthRow(l, v, tone) { return `<div class="hr"><span class="hr-l">${l}</span><span class="hr-v mono">${v}</span><span class="dot ${tone}"></span></div>`; }
 
@@ -405,11 +564,31 @@ function rMoney() {
   ] }, options: Object.assign(axis(true), { plugins: { legend: { display: true, labels: { color: C.muted, boxWidth: 11 } } } }) });
   draw('moDaily', { type: 'bar', data: { labels: v.dailyTrend.map(r => r.label), datasets: [{ data: v.dailyTrend.map(r => r.revenue), backgroundColor: C.blue, borderRadius: 3 }] }, options: axis(true) });
   const pm = v.paymentMethods.slice(0, 7);
-  draw('moMethods', { type: 'doughnut', data: { labels: pm.map(p => p.name), datasets: [{ data: pm.map(p => p.value), backgroundColor: PALETTE, borderWidth: 0 }] }, options: doughnut() });
+  draw('moMethods', { type: 'doughnut', data: { labels: pm.map(p => p.name), datasets: [{ data: pm.map(p => p.value), backgroundColor: pm.map(p => methodColor(p.name)), borderWidth: 0 }] }, options: doughnut() });
   el('moExpenses').innerHTML = table(['Date', 'Category', 'Status', 'Amount'], (v.expensesList || []).slice(0, 20).map(e => [esc(e.date || '—'), esc(e.category), badge((e.status || '').toLowerCase() || 'pending'), AED(e.amount)]));
   el('moTopClients').innerHTML = table(['Client', 'Revenue', 'Paid', 'Orders'], v.topClients.slice(0, 10).map(c => [esc(c.client), AED(c.revenue), AED(c.paid), NUM(c.orders)]));
   const ageing = v.outstandingOrders.slice(0, 12);
   el('moAgeing').innerHTML = table(['Date', 'Client', 'Service', 'Owed'], ageing.map(o => [esc(o.date), esc(o.client || '—'), esc(o.service), AED(o.amount)]));
+  // req #22: largest outstanding clients
+  const col = v.collection || {};
+  if (el('moLargestOut')) {
+    el('moLargestOut').innerHTML = table(['Client', 'Outstanding', 'Oldest Age', 'Invoices', 'Source'],
+      (col.clients || []).slice(0, 10).map(c => [`<span class="lk" data-client="${esc(c.client)}">${esc(c.client)}</span>`, `<span class="warn-txt">${AED(c.outstanding)}</span>`, `<b class="${c.oldestAge > 90 ? 'risk-high' : c.oldestAge > 30 ? 'risk-medium' : ''}">${NUM(c.oldestAge)}d</b>`, NUM(c.invoices), esc(c.lead)]));
+    el('moLargestOut').querySelectorAll('[data-client]').forEach(s => s.addEventListener('click', () => openClient(s.dataset.client)));
+  }
+  // req #22: collection forecast
+  if (el('moCollForecast')) {
+    const fc = v.forecasts || {};
+    el('moCollForecast').innerHTML = [
+      kvRow('Total outstanding to collect', AED(col.totalOutstanding || k.outstanding), 'good'),
+      kvRow('Expected collection · next 7 days', AED(fc.collect7 || 0), 'good'),
+      kvRow('Expected collection · next 30 days', AED(fc.collect30 || 0), 'good'),
+      kvRow('Due now (≤7 days old)', AED(col.dueWeek || 0)),
+      kvRow('Over 30 days', AED(col.over30 || 0)),
+      kvRow('Over 90 days (high risk)', AED(col.over90 || 0)),
+      `<div class="fc-basis">${esc(fc.basis || 'Run-rate from recent collections')}</div>`,
+    ].join('');
+  }
 }
 
 /* ---------------- PIPELINE ---------------- */
@@ -519,8 +698,17 @@ function rGoogle() {
     { label: 'Revenue', data: rt.map(r => r.revenue), backgroundColor: C.green, borderRadius: 4 },
     { label: 'Ad Spend', data: rt.map(r => r.spend), backgroundColor: C.red, borderRadius: 4 },
   ] }, options: Object.assign(axis(true), { plugins: { legend: { display: true, labels: { color: C.muted, boxWidth: 11 } }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + AED(c.parsed.y) } } } }) });
-  // ROAS trend
-  draw('gRoasTrend', { type: 'line', data: { labels: rt.map(r => r.label), datasets: [{ data: rt.map(r => r.roas), borderColor: C.accent, backgroundColor: 'rgba(124,92,252,.15)', fill: true, tension: .35, borderWidth: 3, pointRadius: 3, spanGaps: true }] }, options: Object.assign(axis(false), { plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => 'ROAS ' + (c.parsed.y == null ? 'N/A' : c.parsed.y.toFixed(2) + 'x') } } } }) });
+  // ROAS trend — req #3: if there is no real spend in any period, ROAS is undefined.
+  // Don't render an empty/misleading chart — replace it with a clear explanation instead.
+  const roasPts = rt.filter(r => r.roas != null);
+  const roasBox = el('gRoasBox');
+  if (roasPts.length < 2) {  // req #7: a single point (or none) is not a "trend" — show an empty-state card, never a near-empty chart
+    if (charts['gRoasTrend']) { charts['gRoasTrend'].destroy(); delete charts['gRoasTrend']; }
+    if (roasBox) roasBox.innerHTML = `<div class="chart-empty"><i class="ti ti-chart-dots-2"></i><div><b>No sufficient ad spend data available for ROAS trend analysis.</b><div class="dimv small">ROAS trend needs ad spend across at least two periods (ROAS = Google Ads revenue ÷ ad spend, per month). ${roasPts.length === 1 ? 'Only one period has spend' : 'No "Google Ads" spend rows exist in Expenses'} for the selected range, so a trend line can't be drawn without inventing data. Add monthly Google Ads spend to the Expenses tab to enable it — revenue &amp; orders above are real.</div></div></div>`;
+  } else {
+    if (roasBox && !el('gRoasTrend')) roasBox.innerHTML = '<canvas id="gRoasTrend"></canvas>';
+    draw('gRoasTrend', { type: 'line', data: { labels: rt.map(r => r.label), datasets: [{ data: rt.map(r => r.roas), borderColor: C.accent, backgroundColor: 'rgba(124,92,252,.15)', fill: true, tension: .35, borderWidth: 3, pointRadius: 3, spanGaps: true }] }, options: Object.assign(axis(false), { plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => 'ROAS ' + (c.parsed.y == null ? 'N/A' : c.parsed.y.toFixed(2) + 'x') } } } }) });
+  }
   // Orders vs Revenue (daily, dual axis)
   const dl = (g.dayList || []);
   draw('gOrdersRev', { type: 'bar', data: { labels: dl.map(d => d.date.slice(5)), datasets: [
@@ -529,12 +717,13 @@ function rGoogle() {
   ] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, labels: { color: C.muted, boxWidth: 11 } } }, scales: { x: { ticks: { color: C.muted, font: { size: 9 }, maxTicksLimit: 12 }, grid: { color: gridc() } }, y: { position: 'left', ticks: { color: C.muted, font: { size: 10 }, callback: vv => vv >= 1000 ? vv / 1000 + 'K' : vv }, grid: { color: gridc() } }, y1: { position: 'right', ticks: { color: C.muted, font: { size: 10 } }, grid: { drawOnChartArea: false } } } } });
   // share
   const oth = Math.max(0, k.totalRevenue - g.revenue);
-  draw('gShare', { type: 'doughnut', data: { labels: ['Google Ads', 'Other sources'], datasets: [{ data: [g.revenue, oth], backgroundColor: [C.green, '#64748B'], borderWidth: 0 }] }, options: doughnut() });
-  // by service / status / delivery
+  // req #8: Google Ads = Green, Other Sources = Blue (no gray)
+  draw('gShare', { type: 'doughnut', data: { labels: ['Google Ads', 'Other sources'], datasets: [{ data: [g.revenue, oth], backgroundColor: [C.green, C.blue], borderWidth: 0 }] }, options: doughnut() });
+  // revenue by service type — req #3: fixed service colors (Legal=Blue, MOFA=Green, Embassy=Violet, MOJ=Orange; others lighter secondaries)
   const dset = (arr, colors) => ({ type: 'doughnut', data: { labels: arr.map(x => x.name), datasets: [{ data: arr.map(x => x.revenue), backgroundColor: colors || PALETTE, borderWidth: 0 }] }, options: doughnut() });
-  draw('gByService', dset(g.byService || []));
-  draw('gByStatus', dset((g.byStatus || []).map(x => ({ name: titleCase(x.name), revenue: x.revenue })), (g.byStatus || []).map(x => ({ paid: C.green, outstanding: C.red, partial: C.orange, cancelled: '#9CA3AF' }[x.name] || C.blue))));
-  draw('gByDelivery', dset((g.byDelivery || []).map(x => ({ name: titleCase(x.name), revenue: x.revenue }))));
+  const gbs = g.byService || [];
+  draw('gByService', dset(gbs, gbs.map((x, i) => serviceColor(x.name, i))));
+  // req #3: "Revenue by Payment Status" and "Revenue by Delivery Status" charts removed (not needed).
 
   // tables (req #10)
   el('gTopClients').innerHTML = table(['Client', 'Revenue', 'Orders', 'Share'], (g.topClients || []).map(c => [`<span class="lk" data-client="${esc(c.name)}">${esc(c.name)}</span>`, AED(c.revenue), NUM(c.orders), PCT(c.share)]));
@@ -544,10 +733,38 @@ function rGoogle() {
   el('gRoasDays').innerHTML = table(['Date', 'ROAS', 'Revenue', 'Spend'], (g.highestRoasDays || []).map(d => [esc(d.date), d.roas == null ? '—' : d.roas.toFixed(2) + 'x', AED(d.revenue), AED(d.spend)]));
   el('gSpendDays').innerHTML = table(['Date', 'Spend', 'Revenue', 'ROAS'], (g.highestSpendDays || []).map(d => [esc(d.date), AED(d.spend), AED(d.revenue), d.roas == null ? '—' : d.roas.toFixed(2) + 'x']));
   el('gOrders').innerHTML = table(['Date', 'Client', 'Service', 'Amount', 'Payment'], (v.googleAdsLeads || []).map(o => [esc(o.date), esc(o.client || '—'), esc(o.service), AED(o.amount), badge(o.status)]));
+  renderGQuality();
+}
+/* GOOGLE ADS LEAD QUALITY (req #5) — order quality of Google leads, separate from ROAS */
+function renderGQuality() {
+  if (!el('gQuality')) return;
+  const fn = (state.data.view.googleAds || {}).funnel || [];
+  const find = lbl => (fn.find(f => f.label === lbl) || { count: 0 }).count;
+  const total = find('Google Ads Orders'), paid = find('Paid Orders'), deliv = find('Delivered Orders'),
+        ret = find('Returning Orders'), out = find('Outstanding Orders'), canc = find('Cancelled Orders');
+  const rate = n => total ? n / total * 100 : 0;
+  const tiles = [
+    ['Total Orders', NUM(total), '100% of Google leads', 'ic-blue'],
+    ['Paid Orders', NUM(paid), PCT(rate(paid)) + ' paid rate', 'ic-green'],
+    ['Delivered Orders', NUM(deliv), PCT(rate(deliv)) + ' delivery rate', 'ic-green'],
+    ['Outstanding Orders', NUM(out), PCT(rate(out)) + ' outstanding rate', 'ic-orange'],
+    ['Cancelled Orders', NUM(canc), PCT(rate(canc)) + ' cancellation rate', 'ic-red'],
+    ['Returning Orders', NUM(ret), PCT(rate(ret)) + ' returning rate', 'ic-purple'],
+  ];
+  el('gQuality').innerHTML = tiles.map(t => `<div class="gq-tile"><div class="gq-l">${t[0]}</div><div class="gq-v mono">${t[1]}</div><div class="gq-s ${t[3]}">${t[2]}</div></div>`).join('');
 }
 function titleCase(s) { return String(s || '').replace(/\b\w/g, c => c.toUpperCase()); }
 
-/* ---------------- REPORTS ---------------- */
+/* ---------------- REPORTS — real reporting center (req #6) ---------------- */
+let repTab = 'register';
+const REP_TABS = [
+  { k: 'register', t: 'Transaction Register', ic: 'ti-list-details' },
+  { k: 'monthly', t: 'Monthly Revenue', ic: 'ti-calendar-stats' },
+  { k: 'collections', t: 'Collections', ic: 'ti-wallet' },
+  { k: 'outstanding', t: 'Outstanding', ic: 'ti-alert-triangle' },
+  { k: 'google', t: 'Google Ads', ic: 'ti-brand-google' },
+  { k: 'clients', t: 'Client Report', ic: 'ti-users' },
+];
 function rReports() {
   const v = state.data.view, k = v.kpis;
   el('repKpis').innerHTML = [
@@ -558,9 +775,48 @@ function rReports() {
     kpi('Expenses', AED(k.totalExpenses), ''),
     kpi('Net Profit', AED(k.netProfit), 'Margin ' + PCT(k.profitMargin)),
   ].join('');
-  el('repTitle').textContent = `TRANSACTION REGISTER · ${v.recentTransactions.length} shown · ${v.filter.from} → ${v.filter.to}`;
-  el('repTable').innerHTML = table(['Date', 'Client', 'Service', 'Ref', 'Source', 'Method', 'Amount', 'Payment', 'Delivery'],
-    v.recentTransactions.map(o => [esc(o.date), esc(o.client || '—'), esc(o.service), esc(o.ref || '—'), esc(o.lead), esc(o.method), AED(o.amount), badge(o.status), badge(o.delivery)]));
+  el('repTabs').innerHTML = REP_TABS.map(x => `<button class="rep-tab ${x.k === repTab ? 'active' : ''}" data-rt="${x.k}"><i class="ti ${x.ic}"></i> ${x.t}</button>`).join('');
+  el('repTabs').querySelectorAll('[data-rt]').forEach(b => b.addEventListener('click', () => { repTab = b.dataset.rt; renderReport(); }));
+  renderReport();
+}
+function renderReport() {
+  const v = state.data.view, k = v.kpis, g = v.googleAds || {}, c = v.collection || {};
+  const range = `${v.filter.from} → ${v.filter.to}`;
+  const lk = name => `<span class="lk" data-client="${esc(name)}">${esc(name || '—')}</span>`;
+  let title = '', html = '';
+  if (repTab === 'register') {
+    title = `TRANSACTION REGISTER · ${v.recentTransactions.length} shown · ${range}`;
+    html = table(['Date', 'Client', 'Service', 'Ref', 'Source', 'Method', 'Amount', 'Payment', 'Delivery'],
+      v.recentTransactions.map(o => [esc(o.date), esc(o.client || '—'), esc(o.service), esc(o.ref || '—'), esc(o.lead), esc(o.method), AED(o.amount), badge(o.status), badge(o.delivery)]));
+  } else if (repTab === 'monthly') {
+    title = `MONTHLY REVENUE REPORT · ${range}`;
+    const tot = v.revenueTrend.reduce((a, r) => a + r.revenue, 0) || 1;
+    html = table(['Month', 'Orders', 'Revenue', 'Share', 'Avg / Order'],
+      v.revenueTrend.map(r => [esc(r.label), NUM(r.orders), AED(r.revenue), PCT(r.revenue / tot * 100), AED(r.orders ? r.revenue / r.orders : 0)]));
+  } else if (repTab === 'collections') {
+    title = `COLLECTIONS REPORT · cash received · ${range}`;
+    const paidClients = (v.topClients || []).filter(x => x.paid > 0).sort((a, b) => b.paid - a.paid);
+    html = `<div class="opp-summary">Total collected <b class="good-txt">${AED(k.paidRevenue)}</b> of ${AED(k.totalRevenue)} billed · collection rate <b>${PCT(k.collectionRate)}</b></div>`
+      + table(['Client', 'Source', 'Revenue', 'Collected', 'Outstanding', 'Collection %'],
+        paidClients.map(x => [lk(x.client), esc(x.lead), AED(x.revenue), `<b class="good-txt">${AED(x.paid)}</b>`, x.outstanding > 0 ? `<span class="warn-txt">${AED(x.outstanding)}</span>` : AED(0), PCT(x.revenue ? x.paid / x.revenue * 100 : 0)]));
+  } else if (repTab === 'outstanding') {
+    title = `OUTSTANDING REPORT · receivables by client · ${range}`;
+    html = `<div class="opp-summary">Total outstanding <b class="warn-txt">${AED(c.totalOutstanding || 0)}</b> across <b>${NUM(c.clientsOwing || 0)}</b> clients · Over 90 days <b>${AED(c.over90 || 0)}</b></div>`
+      + table(['Client', 'Outstanding', 'Oldest Age', 'Invoices', 'Source'],
+        (c.clients || []).map(x => [lk(x.client), `<span class="warn-txt">${AED(x.outstanding)}</span>`, `<b class="${x.oldestAge > 90 ? 'risk-high' : x.oldestAge > 30 ? 'risk-medium' : ''}">${NUM(x.oldestAge)}d</b>`, NUM(x.invoices), esc(x.lead)]));
+  } else if (repTab === 'google') {
+    title = `GOOGLE ADS REPORT · ${range}`;
+    html = `<div class="opp-summary">Google Ads revenue <b>${AED(g.revenue || 0)}</b> · ${NUM(g.orders || 0)} orders · ROAS <b>${g.roas == null ? 'N/A' : g.roas.toFixed(2) + 'x'}</b> · ${NUM(g.newClients || 0)} new / ${NUM(g.returningClients || 0)} returning clients</div>`
+      + table(['Date', 'Client', 'Service', 'Amount', 'Payment', 'Delivery'],
+        (v.googleAdsLeads || []).map(o => [esc(o.date), lk(o.client), esc(o.service), AED(o.amount), badge(o.status), badge(o.delivery)]));
+  } else {
+    title = `CLIENT REPORT · ${(v.topClients || []).length} clients · ${range}`;
+    html = table(['Client', 'Source', 'Orders', 'Revenue', 'Collected', 'Outstanding', 'Last Order', 'Status'],
+      (v.topClients || []).map(x => [lk(x.client), esc(x.lead), NUM(x.orders), AED(x.revenue), AED(x.paid), x.outstanding > 0 ? `<span class="warn-txt">${AED(x.outstanding)}</span>` : AED(0), esc(x.lastDate), esc(x.status)]));
+  }
+  el('repTitle').textContent = title;
+  el('repTable').innerHTML = html;
+  el('repTable').querySelectorAll('[data-client]').forEach(s => s.addEventListener('click', () => openClient(s.dataset.client)));
 }
 function qs() { const f = state.data.view.filter; return `from=${f.from}&to=${f.to}&service=${encodeURIComponent(f.service)}&lead=${encodeURIComponent(f.lead)}`; }
 el('expCsv').addEventListener('click', () => { logEvent('ok', 'Export generated', 'CSV export · ' + state.data.view.filter.from + ' → ' + state.data.view.filter.to); window.open('/api/export?' + qs(), '_blank'); });
@@ -571,8 +827,8 @@ el('expPdf').addEventListener('click', () => { logEvent('ok', 'Export generated'
 function dubaiDayKey(ts) { try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dubai' }).format(new Date(ts)); } catch (_) { return ''; } }
 function badge2(s) { const m = { ok: 'good', info: 'info', warning: 'warn', error: 'bad' }; return `<span class="pill ${m[s] || 'neutral'}">${esc(s)}</span>`; }
 
-let auditTime = 'today';
 const afState = { severity: 'all', type: 'all', user: 'all', q: '' };
+let auditMode = 'detect'; // req #12: 'detect' = change-detection date (c.ts) · 'txn' = transaction date (c.txnDate)
 let forensic = { changes: [], total: 0, loadedAt: 0 };
 let forensicLoading = false;
 async function loadForensic(force) {
@@ -585,18 +841,15 @@ async function loadForensic(force) {
 }
 function sevPill(s) { const m = { CRITICAL: 'bad', WARNING: 'warn', INFO: 'info' }; return `<span class="pill ${m[s] || 'neutral'}">${esc(s)}</span>`; }
 function typePill(t) { const m = { CREATE: 'good', DELETE: 'bad', STATUS_CHANGE: 'info', VALUE_CHANGE: 'warn', UPDATE: 'neutral', SYSTEM_EVENT: 'neutral' }; return `<span class="pill ${m[t] || 'neutral'}">${esc(t)}</span>`; }
-function timeWindow() {
-  const today = state.data.meta.todayDubai; const [y, mm, dd] = today.split('-').map(Number);
-  const yKey = dStr(new Date(y, mm - 1, dd - 1)), wk = dStr(new Date(y, mm - 1, dd - 6));
-  return { today, yKey, wk };
-}
+// req #4: the Audit Log follows the GLOBAL date filter (state.filter / view.filter), not its own presets.
 function filteredForensic() {
-  const w = timeWindow();
+  const f = (state.data && state.data.view && state.data.view.filter) || {};
+  const from = f.from || '0000-00-00', to = f.to || '9999-99-99';
   return forensic.changes.filter(c => {
-    const day = dubaiDayKey(c.ts);
-    if (auditTime === 'today' && day !== w.today) return false;
-    if (auditTime === 'yesterday' && day !== w.yKey) return false;
-    if (auditTime === '7' && day < w.wk) return false;
+    // req #12: in Transaction-Date mode filter by the row's own date (fallback to detection day
+    // for legacy/system records that have no transaction date).
+    const day = auditMode === 'txn' ? (c.txnDate || dubaiDayKey(c.ts)) : dubaiDayKey(c.ts);
+    if (day && (day < from || day > to)) return false;   // outside the selected global range
     if (afState.severity !== 'all' && c.severity !== afState.severity) return false;
     if (afState.type !== 'all' && c.changeType !== afState.type) return false;
     if (afState.user !== 'all' && c.user !== afState.user) return false;
@@ -628,12 +881,16 @@ function rAudit() {
     kpi('Warnings', NUM(win.filter(c => c.severity === 'WARNING').length), 'medium severity', win.some(c => c.severity === 'WARNING') ? 'warn' : 'good'),
   ].join('');
 
-  const tlabel = { today: 'today', yesterday: 'yesterday', '7': 'last 7 days', all: 'all time' }[auditTime];
-  el('auditLogTitle').textContent = `FORENSIC CHANGE LOG · ${win.length} events · ${tlabel}`;
+  // req #4: priority = real data changes. System events stay secondary — hidden from the main
+  // log unless explicitly selected (they remain in their own "System & Sync Events" section below).
+  const showSys = afState.type === 'SYSTEM_EVENT';
+  const tableRows = showSys ? win.filter(c => c.changeType === 'SYSTEM_EVENT') : dataCh;
+  const tlabel = computeRange(state.filter.range).label;
+  el('auditLogTitle').textContent = `FORENSIC CHANGE LOG · ${NUM(tableRows.length)} ${showSys ? 'system event(s)' : 'data change(s)'} · ${tlabel}`;
   const fmtT = ts => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dubai', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(ts));
   el('forensicTable').innerHTML = table(
     ['Time', 'Severity', 'Type', 'Reference', 'Sheet', 'Column', 'Old value', 'New value', 'User'],
-    win.slice(0, 400).map(c => [
+    tableRows.slice(0, 400).map(c => [
       `<span class="mono small">${fmtT(c.ts)}</span>`, sevPill(c.severity), typePill(c.changeType),
       `<b>${esc(c.ref || '—')}</b>`, esc(c.sheet || '—'), esc(c.column || '—'),
       c.oldValue ? `<span class="old-v">${esc(c.oldValue)}</span>` : '<span class="dimv">—</span>',
@@ -663,8 +920,8 @@ function rAudit() {
     .sort((a, b) => (a.ts < b.ts ? 1 : -1)).slice(0, 60);
   el('auditSystem').innerHTML = sys.map(e => `<div class="log-row"><span class="lt mono">${fmtT(e.ts)}</span><span class="le">${esc(e.event)}${e.client ? ' <span class="pill neutral xtag">you</span>' : ''}</span><span>${badge2(e.status)}</span><span class="ld">${esc(e.details)}</span></div>`).join('') || '<div class="empty">No events</div>';
 }
-// forensic filter controls (bound once)
-el('afTime').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; auditTime = b.dataset.af; el('afTime').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); rAudit(); });
+// forensic filter controls (bound once) — time range now comes from the global filter (req #4)
+el('afMode').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; auditMode = b.dataset.mode; el('afMode').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); rAudit(); });
 el('afSeverity').addEventListener('change', () => { afState.severity = el('afSeverity').value; rAudit(); });
 el('afType').addEventListener('change', () => { afState.type = el('afType').value; rAudit(); });
 el('afUser').addEventListener('change', () => { afState.user = el('afUser').value; rAudit(); });
@@ -824,7 +1081,52 @@ function rSettings() {
     (uv[k] || []).forEach(x => rows.push([label, `<span class="warn-txt">${esc(x.value)}</span>`, NUM(x.count), '<span class="pill warn">not in Settings</span>'])));
   el('setUnknown').innerHTML = rows.length ? table(['Category', 'Value (not in Settings)', 'Rows', 'Status'], rows)
     : '<div class="empty" style="color:var(--green)">✓ Every value in the sheet matches the Settings master — nothing auto-created.</div>';
+  renderSettingsPrefs();
 }
+/* req #9: reflect current preferences in the controls + render the fixed colour legends */
+function renderSettingsPrefs() {
+  const p = getPrefs();
+  const set = (id, val) => { const e = el(id); if (e) e.value = val; };
+  set('prefLanding', p.landing); set('prefRange', p.range); set('prefRemember', p.remember);
+  set('prefDensity', p.density); set('prefNotif', p.notif);
+  set('prefTheme', document.body.classList.contains('light') ? 'light' : 'dark');
+  const sw = (name, color) => `<div class="swatch"><span class="sw-chip" style="background:${color}"></span><span class="sw-n">${esc(name)}</span><span class="sw-hex mono">${color}</span></div>`;
+  const st = (state.data && state.data.view.settings) || {};
+  // lead source colors (from the Settings master, coloured by the fixed identity)
+  const leads = (st.leadSources && st.leadSources.length) ? st.leadSources : ['Our Client', 'Google Ads', 'New', 'Walk-in Client', 'Other'];
+  el('setLeadColors').innerHTML = leads.map(n => sw(n, leadColor(n))).join('');
+  // payment method colors
+  el('setMethodColors').innerHTML = ['Bank Transfer', 'Payment Link', 'Cash', 'Other'].map(n => sw(n, methodColor(n))).join('');
+  // service + status chart colors
+  const svcs = (st.serviceTypes && st.serviceTypes.length) ? st.serviceTypes.slice(0, 8) : ['Legal Translation', 'MOFA', 'Embassy', 'MOJ'];
+  el('setChartColors').innerHTML = svcs.map((n, i) => sw(n, serviceColor(n, i))).join('')
+    + sw('Paid', C.green) + sw('Outstanding', C.red) + sw('Cancelled', '#9CA3AF');
+}
+// bind preference controls once
+function bindPrefs() {
+  const reRender = () => { if (state.data) renderAll(); };
+  const onChange = (id, key, after) => { const e = el(id); if (!e) return; e.addEventListener('change', () => { setPref(key, e.value); if (after) after(e.value); flashSaved(); }); };
+  onChange('prefLanding', 'landing');
+  onChange('prefRange', 'range');
+  onChange('prefRemember', 'remember', () => saveView());
+  onChange('prefDensity', 'density', v => { document.body.classList.toggle('compact', v === 'compact'); });
+  onChange('prefNotif', 'notif', () => renderNotifications());
+  const pt = el('prefTheme'); if (pt) pt.addEventListener('change', () => {
+    const light = pt.value === 'light';
+    document.body.classList.toggle('light', light);
+    localStorage.setItem('ats-theme', light ? 'light' : 'dark');
+    el('themeIcon').className = 'ti ' + (light ? 'ti-sun' : 'ti-moon');
+    flashSaved(); reRender();
+  });
+  const rs = el('setReset'); if (rs) rs.addEventListener('click', () => {
+    try { localStorage.removeItem(PREFS_KEY); localStorage.removeItem(VIEW_KEY); } catch (_) {}
+    document.body.classList.remove('compact');
+    flashSaved('Reset to defaults');
+    renderSettingsPrefs();
+  });
+}
+function flashSaved(msg) { const e = el('prefSaved'); if (!e) return; e.textContent = '✓ ' + (msg || 'Preference saved'); e.classList.add('show'); clearTimeout(flashSaved._t); flashSaved._t = setTimeout(() => e.classList.remove('show'), 1800); }
+bindPrefs();
 function kv(rows) { return rows.map(([k, v]) => `<div class="kvr"><span class="kvk">${esc(k)}</span><span class="kvv">${v}</span></div>`).join(''); }
 
 /* ---------------- upload ---------------- */
@@ -855,25 +1157,37 @@ function buildNotifications() {
   const d = state.data; if (!d) return [];
   const m = d.meta, vd = d.validation, v = d.view, ss = m.sheetStatus || {};
   const ts0 = m.lastSync || m.fetchedAt || new Date().toISOString();
+  const col = v.collection || {}, g = v.googleAds || {};
   const ns = [];
-  if (d.source === 'error') ns.push({ id: 'err|' + (ss.checkedAt || ts0), level: 'error', icon: 'ti-plug-connected-x', title: 'Google Sheet not connected', detail: 'Dashboard is showing NO data. Open System Health.', ts: ss.checkedAt || ts0, goto: 'health' });
-  if (!vd.reconciles) ns.push({ id: 'recon|gap', level: 'error', icon: 'ti-alert-octagon', title: 'Reconciliation gap detected', detail: 'Paid + Outstanding ≠ Total (gap ' + AEDk(vd.gap) + ') — open Audit Log', ts: ts0, goto: 'audit' });
+  // req #20: each notification carries a category (cat) for the dropdown filters
+  if (d.source === 'error') ns.push({ id: 'err|' + (ss.checkedAt || ts0), level: 'error', cat: 'system', icon: 'ti-plug-connected-x', title: 'Google Sheet not connected', detail: 'Dashboard is showing NO data. Open System Health.', ts: ss.checkedAt || ts0, goto: 'health' });
+  if (!vd.reconciles) ns.push({ id: 'recon|gap', level: 'error', cat: 'audit', icon: 'ti-alert-octagon', title: 'Reconciliation gap detected', detail: 'Paid + Outstanding ≠ Total (gap ' + AEDk(vd.gap) + ') — open Audit Log', ts: ts0, goto: 'audit' });
   // missing amount ≠ error (req #5): informational only — rows are still logged
-  if (vd.missingAmounts) ns.push({ id: 'amt|' + vd.missingAmounts, level: 'info', icon: 'ti-pencil', title: vd.missingAmounts + ' transactions missing amounts', detail: 'Informational — open Audit Log to review affected rows', ts: ts0, goto: 'audit' });
-  if (vd.brokenStatus) ns.push({ id: 'status|' + vd.brokenStatus, level: 'warning', icon: 'ti-alert-triangle', title: vd.brokenStatus + ' statuses off the Settings list', detail: 'Open Audit Log → Data Validation', ts: ts0, goto: 'audit' });
-  if (v.diag && v.diag.isEmpty) ns.push({ id: 'empty|' + v.filter.from + '|' + v.filter.to, level: 'warning', icon: 'ti-calendar-off', title: 'Selected range has no transactions', detail: v.filter.from + ' → ' + v.filter.to + ' · latest data ' + m.maxDate, ts: ts0, goto: 'overview' });
-  if (m.lastSync) ns.push({ id: 'sync|' + m.lastSync, level: 'info', icon: 'ti-refresh', title: 'Data refreshed', detail: 'Synced ' + new Date(m.lastSync).toLocaleTimeString() + ' · ' + NUM(m.totalRecords) + ' transactions — open Sync Events', ts: ts0, goto: 'health' });
-  ns.push({ id: 'src|' + d.source, level: d.source === 'live' ? 'info' : 'warning', icon: 'ti-database', title: (m.sourceLabel || d.source), detail: d.source === 'live' ? 'Connected live to Google Sheet — open System Health' : (m.sourceMeta ? m.sourceMeta.workbook : '—'), ts: ts0, goto: 'health' });
-  if (ss.state === 'private') ns.push({ id: 'sheet|private', level: 'warning', icon: 'ti-cloud-off', title: 'Google Sheet not connected (private)', detail: 'Open System Health for details', ts: ss.checkedAt || m.lastSync, goto: 'health' });
+  if (vd.missingAmounts) ns.push({ id: 'amt|' + vd.missingAmounts, level: 'info', cat: 'audit', icon: 'ti-pencil', title: vd.missingAmounts + ' transactions missing amounts', detail: 'Informational — open Audit Log to review affected rows', ts: ts0, goto: 'audit' });
+  if (vd.brokenStatus) ns.push({ id: 'status|' + vd.brokenStatus, level: 'warning', cat: 'audit', icon: 'ti-alert-triangle', title: vd.brokenStatus + ' statuses off the Settings list', detail: 'Open Audit Log → Data Validation', ts: ts0, goto: 'audit' });
+  // collections (req #20)
+  if ((col.over90 || 0) > 0) ns.push({ id: 'coll90|' + col.over90, level: 'warning', cat: 'collection', icon: 'ti-clock-exclamation', title: AED(col.over90) + ' overdue 90+ days', detail: 'High-risk receivables — open Collection Center', ts: ts0, goto: 'collection' });
+  else if ((col.over30 || 0) > 0) ns.push({ id: 'coll30|' + col.over30, level: 'info', cat: 'collection', icon: 'ti-clock-dollar', title: AED(col.over30) + ' overdue 30+ days', detail: 'Chase these receivables — open Collection Center', ts: ts0, goto: 'collection' });
+  // google ads (req #20)
+  if (g.roas != null && g.roas < 2 && (g.spend || 0) > 0) ns.push({ id: 'groas|' + g.roas, level: 'warning', cat: 'google', icon: 'ti-brand-google', title: 'Google Ads ROAS below 2x (' + g.roas.toFixed(2) + 'x)', detail: 'Marketing efficiency low — open Google Ads', ts: ts0, goto: 'google' });
+  else if ((g.orders || 0) > 0) ns.push({ id: 'gads|' + (m.lastSync || ''), level: 'info', cat: 'google', icon: 'ti-brand-google', title: 'Google Ads: ' + NUM(g.orders) + ' orders · ' + AED(g.revenue), detail: (g.roas == null ? 'No spend recorded' : 'ROAS ' + g.roas.toFixed(2) + 'x') + ' — open Google Ads', ts: ts0, goto: 'google' });
+  if (v.diag && v.diag.isEmpty) ns.push({ id: 'empty|' + v.filter.from + '|' + v.filter.to, level: 'warning', cat: 'system', icon: 'ti-calendar-off', title: 'Selected range has no transactions', detail: v.filter.from + ' → ' + v.filter.to + ' · latest data ' + m.maxDate, ts: ts0, goto: 'overview' });
+  if (m.lastSync) ns.push({ id: 'sync|' + m.lastSync, level: 'info', cat: 'system', icon: 'ti-refresh', title: 'Data refreshed', detail: 'Synced ' + new Date(m.lastSync).toLocaleTimeString() + ' · ' + NUM(m.totalRecords) + ' transactions — open Sync Events', ts: ts0, goto: 'health' });
+  ns.push({ id: 'src|' + d.source, level: d.source === 'live' ? 'info' : 'warning', cat: 'system', icon: 'ti-database', title: (m.sourceLabel || d.source), detail: d.source === 'live' ? 'Connected live to Google Sheet — open System Health' : (m.sourceMeta ? m.sourceMeta.workbook : '—'), ts: ts0, goto: 'health' });
+  if (ss.state === 'private') ns.push({ id: 'sheet|private', level: 'warning', cat: 'system', icon: 'ti-cloud-off', title: 'Google Sheet not connected (private)', detail: 'Open System Health for details', ts: ss.checkedAt || m.lastSync, goto: 'health' });
   return ns;
 }
 const DISMISS_KEY = 'ats-notif-dismissed';
+let notifFilter = 'all'; // req #20: All / warning / audit / google / collection / system
 function dismissedSet() { try { return new Set(JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]')); } catch (_) { return new Set(); } }
 function saveDismissed(s) { try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...s])); } catch (_) {} }
-function liveNotifs() { const dm = dismissedSet(); return buildNotifications().filter(n => !dm.has(n.id)); }
+function liveNotifs() { const dm = dismissedSet(); const alertsOnly = getPrefs().notif === 'alerts'; return buildNotifications().filter(n => !dm.has(n.id) && (!alertsOnly || n.level !== 'info')); }
 function unreadCount() { const r = readSet(); return liveNotifs().filter(n => (n.level === 'warning' || n.level === 'error') && !r.has(n.id)).length; }
 function renderNotifications() {
-  const ns = liveNotifs(), r = readSet(), unread = unreadCount();
+  const all = liveNotifs(), r = readSet(), unread = unreadCount();
+  // req #20: apply the active category filter (badge still reflects ALL unread)
+  const ns = all.filter(n => notifFilter === 'all' ? true : notifFilter === 'warning' ? (n.level === 'warning' || n.level === 'error') : n.cat === notifFilter);
+  const ff = el('notifFilters'); if (ff) ff.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.nf === notifFilter));
   const badge = el('nbadge');
   if (unread > 0) { badge.hidden = false; badge.textContent = unread > 9 ? '9+' : unread; } else { badge.hidden = true; }
   el('notifList').innerHTML = ns.map((n, i) => {
@@ -900,6 +1214,10 @@ function renderNotifications() {
 function closeDropdowns(except) { ['notifPanel', 'profilePanel'].forEach(id => { if (id !== except) el(id).hidden = true; }); }
 el('bellBtn').addEventListener('click', e => { e.stopPropagation(); const p = el('notifPanel'); const open = p.hidden; closeDropdowns('notifPanel'); p.hidden = !open; if (open) renderNotifications(); });
 el('notifReadAll').addEventListener('click', e => { e.stopPropagation(); const s = readSet(); liveNotifs().forEach(n => s.add(n.id)); saveRead(s); logEvent('info', 'Notifications read', 'Marked all notifications as read'); renderNotifications(); });
+// req #20: clear all (dismiss every currently-visible notification, persisted)
+el('notifClearAll').addEventListener('click', e => { e.stopPropagation(); const dm = dismissedSet(); liveNotifs().forEach(n => dm.add(n.id)); saveDismissed(dm); logEvent('info', 'Notifications cleared', 'Cleared all notifications'); renderNotifications(); });
+// req #20: category filter chips
+el('notifFilters').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; e.stopPropagation(); notifFilter = b.dataset.nf; renderNotifications(); });
 el('notifPanel').addEventListener('click', e => e.stopPropagation());
 el('profileBtn').addEventListener('click', e => { e.stopPropagation(); const p = el('profilePanel'); const open = p.hidden; closeDropdowns('profilePanel'); if (open) renderProfileMenu(); p.hidden = !open; });
 el('profilePanel').addEventListener('click', e => e.stopPropagation());
@@ -917,9 +1235,16 @@ function renderProfileMenu() {
 }
 
 /* ---------------- data load ---------------- */
+// req #17: lightweight toast confirmation
+function toast(msg, tone) {
+  let host = el('toastHost'); if (!host) { host = document.createElement('div'); host.id = 'toastHost'; host.className = 'toast-host'; document.body.appendChild(host); }
+  const t = document.createElement('div'); t.className = 'toast ' + (tone || 'good'); t.innerHTML = `<i class="ti ${tone === 'bad' ? 'ti-alert-triangle' : 'ti-circle-check'}"></i><span>${esc(msg)}</span>`;
+  host.appendChild(t); setTimeout(() => t.classList.add('show'), 10);
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3200);
+}
 let firstLoad = true;
 let prevSource = null;        // tracks source mode across loads (for recovery/lost detection)
-async function load(fresh) {
+async function load(fresh, notify) {
   try {
     const f = state.filter;
     const params = new URLSearchParams({ from: f.from || '', to: f.to || '', service: f.service || 'All', lead: f.lead || 'All' });
@@ -947,12 +1272,20 @@ async function load(fresh) {
     else if (fresh && src !== 'error') { logEvent('ok', 'Data refreshed', NUM(d.meta.totalRecords) + ' transactions · ' + label + ' · validation ' + (d.validation.reconciles ? 'passed' : 'gap')); }
     prevSource = src;
 
+    const sy = window.scrollY;  // req #7: preserve scroll position across refresh/sync re-renders
     renderAll();               // re-renders chrome (banners, sync chip, notifications) + active page from fresh state
+    if (sy) window.scrollTo({ top: sy });
     if (state.page === 'audit') loadForensic(true);  // pull any newly-detected changes
     el('loading').style.display = 'none';
-  } catch (e) { console.error('[ATS] load error', e); el('loading').innerHTML = '<p style="color:var(--red)">Failed: ' + esc(e.message) + '</p>'; }
+    // req #17: explicit-sync confirmation toast (NOT on silent 60s auto-refresh)
+    if (notify) {
+      if (src === 'error') toast('Sync failed — Google Sheet not connected', 'bad');
+      else toast('Google Sheet synced successfully · ' + NUM(d.meta.totalRecords) + ' rows', 'good');
+    }
+  } catch (e) { console.error('[ATS] load error', e); el('loading').innerHTML = '<p style="color:var(--red)">Failed: ' + esc(e.message) + '</p>'; if (notify) toast('Sync failed: ' + e.message, 'bad'); }
 }
-el('syncNow').addEventListener('click', () => { logEvent('info', 'Sync now', 'Manual sync requested'); load(true); });
+el('syncNow').addEventListener('click', () => { logEvent('info', 'Sync now', 'Manual sync requested'); load(true, true); });
+restoreView();  // req #7: restore last page + filters (or apply preferred defaults) before first load
 load();
 // auto-refresh every 60s on ANY page/range so the UI recovers automatically (no browser refresh needed)
 setInterval(() => load(true), 60 * 1000);
