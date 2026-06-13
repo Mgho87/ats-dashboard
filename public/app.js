@@ -38,34 +38,84 @@ function serviceColor(name, i) {
 }
 
 const state = { data: null, filter: { range: 'all', from: '', to: '', service: 'All', lead: 'All' }, page: 'overview' };
+// active sub-tab state (hoisted so the URL serializer can read them) — req #10+11
+let oppTab = 'A', repTab = 'register', auditMode = 'detect';
 
-/* ---------- preferences + view persistence (req #7, #9) ---------- */
+/* ---------- UNIFIED STATE MODEL (req 10+11) ----------
+   URL query params → page · date range · service · source · active tab · report type
+                       (shareable, survives F5, syncs with history via replaceState)
+   sessionStorage    → scroll position (per page, same-tab)
+   localStorage      → user PREFERENCES only (+ a remembered last-view string for bare-URL opens) */
 const PREFS_KEY = 'ats-prefs', VIEW_KEY = 'ats-view';
 const PREF_DEFAULTS = { landing: 'overview', range: 'all', remember: '1', density: 'comfortable', notif: 'all' };
 function getPrefs() { try { return Object.assign({}, PREF_DEFAULTS, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); } catch (_) { return Object.assign({}, PREF_DEFAULTS); } }
 function setPref(k, v) { const p = getPrefs(); p[k] = v; try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch (_) {} }
 function applyPrefs() { document.body.classList.toggle('compact', getPrefs().density === 'compact'); }
-function saveView() {
-  if (getPrefs().remember !== '1') return;
-  try { localStorage.setItem(VIEW_KEY, JSON.stringify({ page: state.page, range: state.filter.range, from: state.filter.from, to: state.filter.to, service: state.filter.service, lead: state.filter.lead })); } catch (_) {}
+
+function buildQuery() {
+  const f = state.filter, q = new URLSearchParams();
+  q.set('page', state.page);
+  q.set('range', f.range || 'all');
+  if (f.range === 'custom') { if (f.from) q.set('from', f.from); if (f.to) q.set('to', f.to); }
+  if (f.service && f.service !== 'All') q.set('service', f.service);
+  if (f.lead && f.lead !== 'All') q.set('source', f.lead);
+  if (repTab && repTab !== 'register') q.set('report', repTab);
+  if (auditMode && auditMode !== 'detect') q.set('amode', auditMode);
+  if (oppTab && oppTab !== 'A') q.set('opp', oppTab);
+  return q;
 }
-// Decide the initial page + filter BEFORE the first load() (restores last view, or applies defaults).
+function writeUrl() {
+  const q = buildQuery();
+  try { history.replaceState({}, '', location.pathname + '?' + q.toString()); } catch (_) {}
+  if (getPrefs().remember === '1') { try { localStorage.setItem(VIEW_KEY, q.toString()); } catch (_) {} } // remembered last view for bare opens
+}
+function saveView() { writeUrl(); }
+function readState() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('page')) return q;                                   // explicit URL (F5 / shared link) wins
+  if (getPrefs().remember === '1') { const s = localStorage.getItem(VIEW_KEY); if (s) return new URLSearchParams(s); }
+  return null;                                                   // → prefs defaults
+}
+/* scroll position per page (sessionStorage, same-tab) */
+function scrollKey(p) { return 'ats-scroll:' + (p || state.page); }
+function saveScroll() { try { sessionStorage.setItem(scrollKey(), String(window.scrollY)); } catch (_) {} }
+function restoreScroll(p) {
+  try {
+    const y = +sessionStorage.getItem(scrollKey(p)); if (!y) return;
+    // defer: charts/tables need a beat to reach full height before the page can scroll to y
+    const apply = () => window.scrollTo({ top: y });
+    requestAnimationFrame(() => requestAnimationFrame(apply));
+    setTimeout(apply, 300); setTimeout(apply, 700);
+  } catch (_) {}
+}
+
+// Decide the initial page + filter + tabs BEFORE the first load() (restores URL/last view, or applies defaults).
 function restoreView() {
   const p = getPrefs(); applyPrefs();
-  let v = null;
-  if (p.remember === '1') { try { v = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); } catch (_) { v = null; } }
-  if (!v) v = { page: p.landing, range: p.range, service: 'All', lead: 'All', from: '', to: '' };
-  state.page = v.page || 'overview';
-  state.filter.service = v.service || 'All';
-  state.filter.lead = v.lead || 'All';
-  state.filter.range = v.range || 'all';
+  const q = readState();
+  if (q) {
+    state.page = q.get('page') || p.landing || 'overview';
+    state.filter.range = q.get('range') || 'all';
+    state.filter.service = q.get('service') || 'All';
+    state.filter.lead = q.get('source') || 'All';
+    repTab = q.get('report') || 'register';
+    auditMode = q.get('amode') || 'detect';
+    oppTab = q.get('opp') || 'A';
+    if (state.filter.range === 'custom') { state.filter.from = q.get('from') || ''; state.filter.to = q.get('to') || ''; }
+  } else {
+    state.page = p.landing || 'overview';
+    state.filter.range = p.range || 'all';
+    state.filter.service = 'All'; state.filter.lead = 'All';
+  }
   // reflect the page in the DOM immediately so the correct section is shown once loading clears
   document.querySelectorAll('.page').forEach(s => s.classList.toggle('active', s.id === 'page-' + state.page));
   document.querySelectorAll('[data-page]').forEach(a => a.classList.toggle('active', a.dataset.page === state.page));
-  // reflect the date range
+  // reflect the date range + apply audit mode toggle UI
   document.querySelectorAll('#presets button').forEach(x => x.classList.toggle('active', x.dataset.range === state.filter.range));
-  if (state.filter.range === 'custom') { el('fFrom').value = v.from || ''; el('fTo').value = v.to || ''; state.filter.from = v.from || ''; state.filter.to = v.to || ''; }
+  const am = el('afMode'); if (am) am.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.mode === auditMode));
+  if (state.filter.range === 'custom') { el('fFrom').value = state.filter.from || ''; el('fTo').value = state.filter.to || ''; }
   else { const r = computeRange(state.filter.range); el('fFrom').value = r.from; el('fTo').value = r.to; state.filter.from = r.from; state.filter.to = r.to; }
+  writeUrl(); // normalise the URL on load (bare / remembered opens get a clean shareable URL)
 }
 
 /* ---------- clock ---------- */
@@ -434,7 +484,6 @@ function rCollection() {
 function healthRow(l, v, tone) { return `<div class="hr"><span class="hr-l">${l}</span><span class="hr-v mono">${v}</span><span class="dot ${tone}"></span></div>`; }
 
 /* ---------------- TOP OPPORTUNITIES CENTER (req #4) ---------------- */
-let oppTab = 'A';
 const OPP_TABS = [
   { k: 'A', t: 'Largest Unpaid' }, { k: 'B', t: 'Oldest Unpaid' }, { k: 'C', t: 'Multiple Invoices' },
   { k: 'D', t: 'Dormant High-Value' }, { k: 'E', t: 'Highest Outstanding' }, { k: 'F', t: 'Largest Collection' },
@@ -443,7 +492,7 @@ function renderOpportunities() {
   if (!el('oppTabs')) return;
   const o = state.data.view.opportunities || {};
   el('oppTabs').innerHTML = OPP_TABS.map(x => `<button class="opp-tab ${x.k === oppTab ? 'active' : ''}" data-ot="${x.k}">${x.t}</button>`).join('');
-  el('oppTabs').querySelectorAll('[data-ot]').forEach(b => b.addEventListener('click', () => { oppTab = b.dataset.ot; renderOpportunities(); }));
+  el('oppTabs').querySelectorAll('[data-ot]').forEach(b => b.addEventListener('click', () => { oppTab = b.dataset.ot; renderOpportunities(); saveView(); }));
   const lk = name => `<span class="lk" data-client="${esc(name)}">${esc(name || '—')}</span>`;
   let html = '';
   if (oppTab === 'A') html = table(['Client', 'Outstanding', 'Orders', 'Lead'], (o.largestUnpaid || []).map(c => [lk(c.client), `<span class="warn-txt">${AED(c.outstanding)}</span>`, NUM(c.orders), esc(c.lead)]));
@@ -773,7 +822,6 @@ function renderGQuality() {
 function titleCase(s) { return String(s || '').replace(/\b\w/g, c => c.toUpperCase()); }
 
 /* ---------------- REPORTS — real reporting center (req #6) ---------------- */
-let repTab = 'register';
 const REP_TABS = [
   { k: 'register', t: 'Transaction Register', ic: 'ti-list-details' },
   { k: 'monthly', t: 'Monthly Revenue', ic: 'ti-calendar-stats' },
@@ -793,7 +841,7 @@ function rReports() {
     kpi('Net Profit', AED(k.netProfit), 'Margin ' + PCT(k.profitMargin)),
   ].join('');
   el('repTabs').innerHTML = REP_TABS.map(x => `<button class="rep-tab ${x.k === repTab ? 'active' : ''}" data-rt="${x.k}"><i class="ti ${x.ic}"></i> ${x.t}</button>`).join('');
-  el('repTabs').querySelectorAll('[data-rt]').forEach(b => b.addEventListener('click', () => { repTab = b.dataset.rt; renderReport(); }));
+  el('repTabs').querySelectorAll('[data-rt]').forEach(b => b.addEventListener('click', () => { repTab = b.dataset.rt; renderReport(); saveView(); }));
   renderReport();
 }
 const REP_DESC = {
@@ -854,7 +902,7 @@ function dubaiDayKey(ts) { try { return new Intl.DateTimeFormat('en-CA', { timeZ
 function badge2(s) { const m = { ok: 'good', info: 'info', warning: 'warn', error: 'bad' }; return `<span class="pill ${m[s] || 'neutral'}">${esc(s)}</span>`; }
 
 const afState = { severity: 'all', type: 'all', user: 'all', q: '' };
-let auditMode = 'detect'; // req #12: 'detect' = change-detection date (c.ts) · 'txn' = transaction date (c.txnDate)
+// auditMode declared at top (req #10+11 URL state): 'detect' = change-detection date · 'txn' = transaction date
 let forensic = { changes: [], total: 0, loadedAt: 0 };
 let forensicLoading = false;
 async function loadForensic(force) {
@@ -947,7 +995,7 @@ function rAudit() {
   el('auditSystem').innerHTML = sys.map(e => `<div class="log-row"><span class="lt mono">${fmtT(e.ts)}</span><span class="le">${esc(e.event)}${e.client ? ' <span class="pill neutral xtag">you</span>' : ''}</span><span>${badge2(e.status)}</span><span class="ld">${esc(e.details)}</span></div>`).join('') || '<div class="empty">No events</div>';
 }
 // forensic filter controls (bound once) — time range now comes from the global filter (req #4)
-el('afMode').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; auditMode = b.dataset.mode; el('afMode').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); rAudit(); });
+el('afMode').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; auditMode = b.dataset.mode; el('afMode').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); rAudit(); saveView(); });
 el('afSeverity').addEventListener('change', () => { afState.severity = el('afSeverity').value; rAudit(); });
 el('afType').addEventListener('change', () => { afState.type = el('afType').value; rAudit(); });
 el('afUser').addEventListener('change', () => { afState.user = el('afUser').value; rAudit(); });
@@ -1272,6 +1320,7 @@ let firstLoad = true;
 let prevSource = null;        // tracks source mode across loads (for recovery/lost detection)
 async function load(fresh, notify) {
   try {
+    const wasFirst = firstLoad;   // req #10+11: on first load restore the per-page saved scroll (sessionStorage)
     const f = state.filter;
     const params = new URLSearchParams({ from: f.from || '', to: f.to || '', service: f.service || 'All', lead: f.lead || 'All' });
     if (fresh) params.set('fresh', '1');
@@ -1298,20 +1347,22 @@ async function load(fresh, notify) {
     else if (fresh && src !== 'error') { logEvent('ok', 'Data refreshed', NUM(d.meta.totalRecords) + ' transactions · ' + label + ' · validation ' + (d.validation.reconciles ? 'passed' : 'gap')); }
     prevSource = src;
 
-    const sy = window.scrollY;  // req #7: preserve scroll position across refresh/sync re-renders
+    const sy = window.scrollY;  // stale-while-revalidate: old data stayed on screen during fetch; preserve scroll across the swap
     renderAll();               // re-renders chrome (banners, sync chip, notifications) + active page from fresh state
-    if (sy) window.scrollTo({ top: sy });
+    if (wasFirst) restoreScroll(state.page); else if (sy) window.scrollTo({ top: sy });
     if (state.page === 'audit') loadForensic(true);  // pull any newly-detected changes
     el('loading').style.display = 'none';
     // req #17: explicit-sync confirmation toast (NOT on silent 60s auto-refresh)
     if (notify) {
       if (src === 'error') toast('Sync failed — Google Sheet not connected', 'bad');
-      else toast('Google Sheet synced successfully · ' + NUM(d.meta.totalRecords) + ' rows', 'good');
+      else { const tm = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dubai', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date()); toast('Google Sheet synced successfully · ' + NUM(d.meta.totalRecords) + ' rows · ' + tm, 'good'); }
     }
   } catch (e) { console.error('[ATS] load error', e); el('loading').innerHTML = '<p style="color:var(--red)">Failed: ' + esc(e.message) + '</p>'; if (notify) toast('Sync failed: ' + e.message, 'bad'); }
 }
 el('syncNow').addEventListener('click', () => { logEvent('info', 'Sync now', 'Manual sync requested'); load(true, true); });
-restoreView();  // req #7: restore last page + filters (or apply preferred defaults) before first load
+// req #10+11: persist scroll position per page (sessionStorage), debounced
+let _scrollT; window.addEventListener('scroll', () => { clearTimeout(_scrollT); _scrollT = setTimeout(saveScroll, 150); }, { passive: true });
+restoreView();  // req #10+11: restore page/filters/tabs from the URL (or remembered/default) before first load
 load();
 // auto-refresh every 60s on ANY page/range so the UI recovers automatically (no browser refresh needed)
 setInterval(() => load(true), 60 * 1000);
