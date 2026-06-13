@@ -37,9 +37,9 @@
         </div>
       </div>
       <div class="dd-wrap">
-        <div class="profile" id="profileBtn"><div class="pavatar">A</div><div class="pmeta"><div class="pn">Admin User</div><div class="pr">Super Admin</div></div><i class="ti ti-chevron-down pchev"></i></div>
+        <div class="profile" id="profileBtn"><div class="pavatar">A</div><div class="pmeta"><div class="pn">Administrator</div></div><i class="ti ti-chevron-down pchev"></i></div>
         <div class="dropdown" id="profilePanel" hidden>
-          <div class="dd-head"><span>Admin User · Super Admin</span></div>
+          <div class="dd-head"><span>Administrator</span></div>
           <div class="dd-body" id="profileMenu"></div>
         </div>
       </div>
@@ -66,8 +66,8 @@
         <div class="exec-big mono" id="execProfit">—</div>
         <div class="exec-margin"><span class="mono" id="execMargin">—</span> net profit margin</div>
         <div class="exec-split">
-          <div class="es-cell"><div class="es-l">Revenue</div><div class="es-v mono" id="execRev">—</div></div>
-          <div class="es-cell"><div class="es-l">Expenses</div><div class="es-v mono" id="execExp">—</div></div>
+          <div class="es-cell"><div class="es-l">Revenue</div><div class="es-v mono" id="execRev">—</div><div class="es-spark" id="execRevSpark"></div></div>
+          <div class="es-cell"><div class="es-l">Expenses</div><div class="es-v mono" id="execExp">—</div><div class="es-spark" id="execExpSpark"></div></div>
         </div>
         <button class="exec-btn" data-page="money">Open Money</button>
       </div>
@@ -120,6 +120,9 @@
       <section class="page active" id="page-overview">
         <div class="page-head"><div><h1>Executive Overview</h1><p id="ov-sub">Management summary across the selected period</p></div></div>
 
+        <!-- QUICK ACTIONS -->
+        <div class="quick-actions" id="quickActions"></div>
+
         <section class="hero">
           <div class="hcard h-blue"><div class="hc-ic"><i class="ti ti-cash"></i></div><div class="hc-lbl">TOTAL REVENUE</div><div class="hc-val mono" id="h-rev">—</div><div class="hc-ctx" id="h-rev-ctx"></div><div class="hc-mini" id="h-rev-mini"></div></div>
           <div class="hcard h-green"><div class="hc-ic"><i class="ti ti-wallet"></i></div><div class="hc-lbl">CASH COLLECTED</div><div class="hc-val mono" id="h-paid">—</div><div class="hc-ctx" id="h-paid-ctx"></div><div class="hc-mini" id="h-paid-mini"></div></div>
@@ -131,6 +134,16 @@
           <div class="tb-h"><i class="ti ti-calendar-event"></i> SELECTED RANGE <span id="today-label"></span></div>
           <div class="today-cells" id="today"></div>
         </section>
+
+        <!-- EXECUTIVE INSIGHTS -->
+        <div class="card insights-card"><h4><i class="ti ti-bulb"></i> EXECUTIVE INSIGHTS</h4><div class="insights-grid" id="execInsights"></div></div>
+
+        <!-- FORECAST + RISK + OPPORTUNITIES -->
+        <div class="grid-3">
+          <div class="card"><h4><i class="ti ti-chart-arrows-vertical"></i> FORECAST</h4><div id="ovForecast"></div></div>
+          <div class="card"><h4><i class="ti ti-shield-half"></i> OUTSTANDING RISK</h4><div id="ovRisk"></div></div>
+          <div class="card"><h4><i class="ti ti-target-arrow"></i> TOP OPPORTUNITIES</h4><div id="ovOpps"></div></div>
+        </div>
 
         <div class="grid-2">
           <div class="card"><h4>REVENUE TREND — MONTHLY</h4><div class="chart-box"><canvas id="ovTrend"></canvas></div></div>
@@ -151,13 +164,11 @@
           <div class="card"><h4>REVENUE vs EXPENSES — MONTHLY</h4><div class="chart-box"><canvas id="moTrend"></canvas></div></div>
           <div class="card"><h4>DAILY REVENUE</h4><div class="chart-box"><canvas id="moDaily"></canvas></div></div>
         </div>
-        <div class="grid-3">
-          <div class="card"><h4>PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="moMethods"></canvas></div></div>
-          <div class="card span2"><h4>EXPENSES BREAKDOWN</h4><div id="moExpenses" class="mini-table"></div></div>
-        </div>
+        <div class="card"><h4>1 · OUTSTANDING — PAYMENT AGEING (collections priority)</h4><div id="moAgeing" class="mini-table tall"></div></div>
+        <div class="card"><h4>2 · TOP PAYING CLIENTS</h4><div id="moTopClients" class="mini-table tall"></div></div>
         <div class="grid-2">
-          <div class="card"><h4>TOP PAYING CLIENTS</h4><div id="moTopClients" class="mini-table"></div></div>
-          <div class="card"><h4>OUTSTANDING — PAYMENT AGEING</h4><div id="moAgeing" class="mini-table"></div></div>
+          <div class="card"><h4>3 · EXPENSES BREAKDOWN</h4><div id="moExpenses" class="mini-table"></div></div>
+          <div class="card"><h4>4 · PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="moMethods"></canvas></div></div>
         </div>
       </section>
 
@@ -196,14 +207,37 @@
 
       <!-- ============ GOOGLE ADS ============ -->
       <section class="page" id="page-google">
-        <div class="page-head"><div><h1>Google Ads</h1><p>Marketing performance & return on ad spend</p></div></div>
-        <div class="kpi-strip" id="gKpis"></div>
+        <div class="page-head"><div><h1>Google Ads</h1><p>Executive marketing performance center — ROAS, CPA, growth & attribution</p></div>
+          <div class="g-score" id="gScore"></div>
+        </div>
+        <div class="kpi-strip kpi-8" id="gKpis"></div>
         <div id="gNote" class="callout" hidden></div>
         <div class="grid-2">
-          <div class="card"><h4>GOOGLE ADS REVENUE vs OTHER SOURCES</h4><div class="chart-box sm"><canvas id="gShare"></canvas></div></div>
-          <div class="card"><h4>GOOGLE ADS REVENUE OVER TIME</h4><div class="chart-box"><canvas id="gTrend"></canvas></div></div>
+          <div class="card"><h4>REVENUE vs AD SPEND — MONTHLY</h4><div class="chart-box"><canvas id="gRevSpend"></canvas></div></div>
+          <div class="card"><h4>ROAS TREND</h4><div class="chart-box"><canvas id="gRoasTrend"></canvas></div></div>
         </div>
-        <div class="card"><h4>GOOGLE ADS ORDERS</h4><div id="gOrders" class="mini-table tall"></div></div>
+        <div class="grid-2">
+          <div class="card"><h4>ORDERS vs REVENUE — DAILY</h4><div class="chart-box"><canvas id="gOrdersRev"></canvas></div></div>
+          <div class="card"><h4>GOOGLE ADS REVENUE vs OTHER SOURCES</h4><div class="chart-box sm"><canvas id="gShare"></canvas></div></div>
+        </div>
+        <div class="grid-3">
+          <div class="card"><h4>REVENUE BY SERVICE TYPE</h4><div class="chart-box sm"><canvas id="gByService"></canvas></div></div>
+          <div class="card"><h4>REVENUE BY PAYMENT STATUS</h4><div class="chart-box sm"><canvas id="gByStatus"></canvas></div></div>
+          <div class="card"><h4>REVENUE BY DELIVERY STATUS</h4><div class="chart-box sm"><canvas id="gByDelivery"></canvas></div></div>
+        </div>
+        <div class="grid-2">
+          <div class="card"><h4>TOP CLIENTS — GOOGLE ADS</h4><div id="gTopClients" class="mini-table"></div></div>
+          <div class="card"><h4>TOP SERVICES — GOOGLE ADS</h4><div id="gTopServices" class="mini-table"></div></div>
+        </div>
+        <div class="grid-2">
+          <div class="card"><h4>BEST REVENUE DAYS</h4><div id="gBestDays" class="mini-table"></div></div>
+          <div class="card"><h4>HIGHEST ROAS DAYS</h4><div id="gRoasDays" class="mini-table"></div></div>
+        </div>
+        <div class="grid-2">
+          <div class="card"><h4>HIGHEST SPEND DAYS</h4><div id="gSpendDays" class="mini-table"></div></div>
+          <div class="card"><h4>GOOGLE ADS ORDERS</h4><div id="gOrders" class="mini-table"></div></div>
+        </div>
+        <div class="card" id="gEmirateCard"><h4>REVENUE BY EMIRATE</h4><div id="gEmirate" class="callout"><i class="ti ti-info-circle"></i> The Google Sheet has no Emirate/location column, so revenue-by-Emirate cannot be computed without inventing data. Add an "Emirate" column to the Transactions tab to enable this chart.</div></div>
       </section>
 
       <!-- ============ REPORTS ============ -->
@@ -237,13 +271,12 @@
           <select id="afUser" class="fsel"><option value="all">All users</option></select>
           <input id="afRef" class="fsearch" placeholder="Search reference / client / column…">
         </div>
-        <div class="card"><h4 id="auditLogTitle">FORENSIC CHANGE LOG</h4><div id="forensicTable" class="mini-table tall"></div></div>
-        <div class="grid-2">
-          <div class="card"><h4>DATA VALIDATION</h4><div id="auditValidation" class="kv"></div></div>
-          <div class="card"><h4>SYSTEM &amp; SYNC EVENTS</h4>
-            <div class="log-head"><span>Time</span><span>Event</span><span>Status</span><span>Details</span></div>
-            <div id="auditSystem" class="log-table"></div>
-          </div>
+        <div class="card"><h4 id="auditLogTitle">A · FORENSIC CHANGE LOG</h4><div id="forensicTable" class="mini-table xtall"></div></div>
+        <div class="card"><h4>B · DATA VALIDATION</h4><div id="auditValidation" class="kv-grid"></div></div>
+        <div class="card"><h4>DUPLICATE DETECTION CENTER</h4><div id="auditDupes" class="mini-table"></div></div>
+        <div class="card"><h4>C · SYSTEM &amp; SYNC EVENTS</h4>
+          <div class="log-head"><span>Time</span><span>Event</span><span>Status</span><span>Details</span></div>
+          <div id="auditSystem" class="log-table"></div>
         </div>
       </section>
 
@@ -252,15 +285,20 @@
         <div class="page-head"><div><h1>System Health</h1><p>Can this dashboard be trusted right now?</p></div></div>
         <div id="trustBanner" class="trust"></div>
         <div class="kpi-strip" id="healthKpis"></div>
-        <div class="grid-2">
-          <div class="card"><h4>DATA SOURCE & SYNC</h4><div id="healthSource" class="kv"></div></div>
-          <div class="card"><h4>CONNECTIVITY</h4><div id="healthConn" class="kv"></div></div>
+        <div class="card sev-critical"><h4><i class="ti ti-alert-octagon"></i> A · CRITICAL ISSUES</h4><div id="healthCritical" class="sev-list"></div></div>
+        <div class="card sev-warning"><h4><i class="ti ti-alert-triangle"></i> B · WARNINGS</h4><div id="healthWarnings" class="sev-list"></div></div>
+        <div class="card sev-info"><h4><i class="ti ti-info-circle"></i> C · INFORMATION</h4>
+          <div class="grid-2">
+            <div id="healthSource" class="kv"></div>
+            <div id="healthConn" class="kv"></div>
+          </div>
+          <div id="healthDates" class="kv kv-top"></div>
         </div>
-        <div class="card"><h4>DATE & FILTER DIAGNOSTICS</h4><div id="healthDates" class="kv"></div></div>
-        <div class="grid-2">
-          <div class="card"><h4>VALIDATION CHECKS</h4><div id="healthChecks" class="checks"></div></div>
-          <div class="card"><h4>ACTIVE WARNINGS & FAILED VALIDATIONS</h4><div id="healthWarn" class="mini-table tall"></div></div>
+        <div class="card"><h4><i class="ti ti-refresh"></i> D · SYNC EVENTS</h4>
+          <div class="log-head"><span>Time</span><span>Event</span><span>Status</span><span>Details</span></div>
+          <div id="healthSync" class="log-table"></div>
         </div>
+        <div class="card"><h4><i class="ti ti-checks"></i> E · VALIDATION RESULTS</h4><div id="healthChecks" class="checks"></div></div>
       </section>
 
       <!-- ============ SETTINGS ============ -->
@@ -283,6 +321,14 @@
 
       <footer class="foot">ALMUTARJEM TRANSLATION SERVICES · EXECUTIVE CONTROL CENTER · Source: <b id="src-foot"></b> · Last sync: <span id="updated">—</span></footer>
     </main>
+  </div>
+
+  <!-- CLIENT 360 MODAL -->
+  <div id="clientModal" class="modal-overlay" hidden>
+    <div class="modal">
+      <div class="modal-head"><h3 id="cmName">Client</h3><button class="icon-btn" id="cmClose"><i class="ti ti-x"></i></button></div>
+      <div class="modal-body" id="cmBody"></div>
+    </div>
   </div>
 
   <script src="app.js"></script>

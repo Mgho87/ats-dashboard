@@ -184,7 +184,7 @@ app.get('/api/data', async (req, res) => {
         spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/' + SPREADSHEET_ID + '/edit',
       },
       view,
-      allTime: { kpis: allTime.kpis, revenueTrend: allTime.revenueTrend },
+      allTime: { kpis: allTime.kpis, revenueTrend: allTime.revenueTrend, expenseTrend: allTime.expenseTrend },
       audit: syncLog.concat(p.audit).slice(0, 160),
       validation: p.validation,
     });

@@ -6,8 +6,17 @@ const NUM  = n => (Number(n) || 0).toLocaleString('en-US');
 const PCT  = n => (Number(n) || 0).toFixed(1) + '%';
 const el   = id => document.getElementById(id);
 const esc  = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const C = { accent: '#7C5CFC', accent2: '#9B7BFF', blue: '#3B82F6', green: '#2DBE8B', red: '#F0616A', orange: '#F2A23C', teal: '#22B8C9', pink: '#EC6FA8', gold: '#E6B84A', muted: '#8A97B5' };
+const C = { accent: '#7C5CFC', accent2: '#9B7BFF', blue: '#3B82F6', green: '#2DBE8B', red: '#F0616A', orange: '#F2A23C', teal: '#22B8C9', pink: '#EC6FA8', gold: '#E6B84A', yellow: '#EAB308', muted: '#8A97B5' };
 const PALETTE = [C.pink, C.blue, C.green, C.orange, C.accent, C.teal, C.gold, '#9CA3AF', '#6366F1', '#EC4899'];
+// fixed lead-source color mapping (req #3): Client=blue, Google Ads=green, New=pink, Walk-In=yellow, Other=purple
+function leadColor(name) {
+  const s = String(name || '').toLowerCase();
+  if (s.includes('google')) return C.green;
+  if (s.includes('walk')) return C.yellow;
+  if (s.includes('new')) return C.pink;
+  if (s.includes('client') || s.includes('our')) return C.blue;
+  return C.accent; // Other / everything else = purple
+}
 
 const state = { data: null, filter: { range: 'all', from: '', to: '', service: 'All', lead: 'All' }, page: 'overview' };
 
@@ -154,6 +163,9 @@ function renderChrome() {
   el('execMargin').textContent = PCT(at.profitMargin);
   el('execRev').textContent = AED(at.totalRevenue);
   el('execExp').textContent = AED(at.totalExpenses);
+  // mini trend charts (req #12) — revenue & expenses monthly sparklines
+  if (el('execRevSpark')) el('execRevSpark').innerHTML = spark((d.allTime.revenueTrend || []).map(r => r.revenue), C.green, 26);
+  if (el('execExpSpark')) el('execExpSpark').innerHTML = spark((d.allTime.expenseTrend || []).map(r => r.expense), C.red, 26);
 
   // audit badge mirrors real validation warning count
   const warn = (d.validation && (d.validation.missingAmounts + d.validation.brokenStatus + (d.validation.reconciles ? 0 : 1))) || 0;
@@ -173,11 +185,16 @@ function renderChrome() {
 
   // filter selects — repopulate whenever the option set changes (e.g. error → live recovery),
   // preserving the current selection. Fixes empty dropdowns after recovering from a no-data state.
-  const optSig = m.options.services.join('|') + '##' + m.options.leads.join('|');
-  if (el('fService').dataset.sig !== optSig && (m.options.services.length || m.options.leads.length)) {
+  // dropdowns sourced from the Settings sheet (single source of truth, req #13), unioned with any real values present in data
+  const st = (v.settings || {});
+  const mergeU = (a, b) => [...new Set([...(a || []), ...(b || [])].filter(Boolean))];
+  const services = mergeU(st.serviceTypes, m.options.services);
+  const leadsList = mergeU(st.leadSources, m.options.leads);
+  const optSig = services.join('|') + '##' + leadsList.join('|');
+  if (el('fService').dataset.sig !== optSig && (services.length || leadsList.length)) {
     const curS = el('fService').value || v.filter.service, curL = el('fLead').value || v.filter.lead;
-    el('fService').innerHTML = '<option value="All">All Services</option>' + m.options.services.map(s => `<option>${esc(s)}</option>`).join('');
-    el('fLead').innerHTML = '<option value="All">All Sources</option>' + m.options.leads.map(s => `<option>${esc(s)}</option>`).join('');
+    el('fService').innerHTML = '<option value="All">All Services</option>' + services.map(s => `<option>${esc(s)}</option>`).join('');
+    el('fLead').innerHTML = '<option value="All">All Sources</option>' + leadsList.map(s => `<option>${esc(s)}</option>`).join('');
     el('fService').dataset.sig = optSig;
     el('fService').value = curS; el('fLead').value = curL;
   }
@@ -240,7 +257,7 @@ function rOverview() {
   el('ovReconcile').className = 'reconcile ' + (rec.reconciles ? 'ok' : 'bad');
   el('ovReconcile').textContent = rec.reconciles ? `✓ Paid + Outstanding = ${AEDk(rec.paidPlusOutstanding)} = Total` : `⚠ Mismatch ${AEDk(rec.paidPlusOutstanding)} vs ${AEDk(rec.total)}`;
   const leads = v.leadSources.slice(0, 6);
-  draw('ovLead', { type: 'doughnut', data: { labels: leads.map(l => l.name), datasets: [{ data: leads.map(l => l.revenue), backgroundColor: PALETTE, borderWidth: 0 }] }, options: doughnut() });
+  draw('ovLead', { type: 'doughnut', data: { labels: leads.map(l => l.name), datasets: [{ data: leads.map(l => l.revenue), backgroundColor: leads.map(l => leadColor(l.name)), borderWidth: 0 }] }, options: doughnut() });
   el('ovSvc').innerHTML = bars(v.topServices.slice(0, 6).map(s => ({ name: s.name, value: s.revenue })), null, i => PCT(k.totalRevenue ? i.value / k.totalRevenue * 100 : 0));
 
   const margin = k.profitMargin, coll = k.collectionRate;
@@ -251,8 +268,92 @@ function rOverview() {
     healthRow('ROAS (Google)', k.roas == null ? 'N/A' : k.roas.toFixed(2) + 'x', k.roas == null ? 'neutral' : k.roas >= 2 ? 'good' : 'warn'),
     healthRow('Reconciliation', rec.reconciles ? 'Balanced' : 'Gap', rec.reconciles ? 'good' : 'bad'),
   ].join('');
+  renderQuickActions();
+  renderInsights();
 }
 function healthRow(l, v, tone) { return `<div class="hr"><span class="hr-l">${l}</span><span class="hr-v mono">${v}</span><span class="dot ${tone}"></span></div>`; }
+
+/* ---------------- QUICK ACTIONS (req #16) ---------------- */
+const QUICK_ACTIONS = [
+  { ic: 'ti-alert-triangle', t: 'View Outstanding', c: 'red', go: 'money' },
+  { ic: 'ti-brand-google', t: 'Google Ads Orders', c: 'green', go: 'google' },
+  { ic: 'ti-crown', t: 'High-Value Clients', c: 'gold', go: 'clients' },
+  { ic: 'ti-clock-dollar', t: 'Unpaid Orders', c: 'orange', go: 'pipeline' },
+  { ic: 'ti-history', t: 'Audit Changes', c: 'purple', go: 'audit' },
+  { ic: 'ti-heartbeat', t: 'Warnings', c: 'blue', go: 'health' },
+  { ic: 'ti-copy', t: 'Duplicate Records', c: 'teal', go: 'audit' },
+];
+function renderQuickActions() {
+  if (!el('quickActions')) return;
+  el('quickActions').innerHTML = QUICK_ACTIONS.map((a, i) =>
+    `<button class="qa-btn" data-qa="${i}"><span class="qa-ic ic-${a.c}"><i class="ti ${a.ic}"></i></span><span>${a.t}</span></button>`).join('');
+  el('quickActions').querySelectorAll('[data-qa]').forEach(b => b.addEventListener('click', () => go(QUICK_ACTIONS[+b.dataset.qa].go)));
+}
+
+/* ---------------- EXECUTIVE INSIGHTS + FORECAST + RISK + OPPORTUNITIES (req #15, extras) ---------------- */
+function insTile(ic, label, value, sub, tone) { return `<div class="ins-tile"><div class="ins-ic ${tone || ''}"><i class="ti ${ic}"></i></div><div class="ins-b"><div class="ins-l">${esc(label)}</div><div class="ins-v">${value}</div><div class="ins-s">${esc(sub || '')}</div></div></div>`; }
+function renderInsights() {
+  const d = state.data, v = d.view, ins = v.insights || {}, k = v.kpis, fc = v.forecasts || {}, rk = v.risk || {}, ds = v.dayStats || {};
+  el('execInsights').innerHTML = [
+    insTile('ti-flame', 'Highest Revenue Source', ins.topSource ? esc(ins.topSource.name) : '—', ins.topSource ? AED(ins.topSource.revenue) : '', 'ic-blue'),
+    insTile('ti-award', 'Top Performing Service', ins.topService ? esc(ins.topService.name) : '—', ins.topService ? AED(ins.topService.revenue) : '', 'ic-green'),
+    insTile('ti-user-dollar', 'Largest Paid Client', ins.largestPaidClient ? esc(ins.largestPaidClient.client) : '—', ins.largestPaidClient ? AED(ins.largestPaidClient.paid) + ' paid' : '', 'ic-green'),
+    insTile('ti-user-exclamation', 'Largest Unpaid Client', ins.largestUnpaidClient && ins.largestUnpaidClient.outstanding > 0 ? esc(ins.largestUnpaidClient.client) : '—', ins.largestUnpaidClient ? AED(ins.largestUnpaidClient.outstanding) + ' owed' : '', 'ic-red'),
+    insTile('ti-calendar-stats', 'Best Revenue Day', ds.bestDay ? esc(ds.bestDay.date) : '—', ds.bestDay ? AED(ds.bestDay.revenue) : '', 'ic-purple'),
+    insTile('ti-percentage', 'Collection Rate', PCT(ins.collectionRate), 'of billed revenue', ins.collectionRate >= 70 ? 'ic-green' : 'ic-orange'),
+    insTile('ti-receipt', 'Average Order Value', AED(ins.avgOrderValue), ds.avgOrdersPerDay + ' orders/day avg', 'ic-blue'),
+    insTile('ti-cash', 'Revenue This Month', AED(ins.revenueMonth), 'this week ' + AEDk(ins.revenueWeek), 'ic-teal'),
+  ].join('');
+
+  // forecast
+  el('ovForecast').innerHTML = [
+    kvRow('Projected month-end revenue', fc.monthEndRevenue == null ? '—' : AED(fc.monthEndRevenue), 'good'),
+    kvRow('Month-to-date', AED(fc.monthToDate || 0)),
+    kvRow('Expected collection · next 7 days', AED(fc.collect7 || 0), 'good'),
+    kvRow('Expected collection · next 30 days', AED(fc.collect30 || 0), 'good'),
+    `<div class="fc-basis">${esc(fc.basis || '')}</div>`,
+  ].join('');
+
+  // risk
+  const totalRiskAmt = (rk.lowAmt || 0) + (rk.medAmt || 0) + (rk.highAmt || 0);
+  el('ovRisk').innerHTML = [
+    `<div class="risk-row high"><span class="risk-dot"></span>High risk<b>${NUM(rk.high || 0)}</b><span class="risk-amt">${AEDk(rk.highAmt || 0)}</span></div>`,
+    `<div class="risk-row med"><span class="risk-dot"></span>Medium risk<b>${NUM(rk.medium || 0)}</b><span class="risk-amt">${AEDk(rk.medAmt || 0)}</span></div>`,
+    `<div class="risk-row low"><span class="risk-dot"></span>Low risk<b>${NUM(rk.low || 0)}</b><span class="risk-amt">${AEDk(rk.lowAmt || 0)}</span></div>`,
+    `<div class="fc-basis">Total at risk: <b>${AED(totalRiskAmt)}</b> · scored by age + amount</div>`,
+  ].join('');
+
+  // top opportunities
+  const opps = (rk.list || []).slice(0, 5);
+  el('ovOpps').innerHTML = (opps.length ? opps.map(o => `<div class="opp-row clickable" data-client="${esc(o.client)}"><div><div class="opp-c">${esc(o.client || '—')}</div><div class="opp-s">${esc(o.service)} · ${o.ageDays}d old · <span class="risk-${o.level}">${o.level}</span></div></div><div class="opp-v">${AED(o.amount)}</div></div>`).join('')
+    : '<div class="empty">No outstanding opportunities — all collected ✓</div>')
+    + (ins.topService ? `<div class="fc-basis">Most profitable service: <b>${esc(ins.topService.name)}</b> · Best source: <b>${ins.topSource ? esc(ins.topSource.name) : '—'}</b></div>` : '');
+  el('ovOpps').querySelectorAll('[data-client]').forEach(r => r.addEventListener('click', () => openClient(r.dataset.client)));
+}
+function kvRow(l, v, tone) { return `<div class="kvr"><span class="kvk">${esc(l)}</span><span class="kvv ${tone === 'good' ? 'good-txt' : ''}">${v}</span></div>`; }
+
+/* ---------------- CLIENT 360 (extra) ---------------- */
+function openClient(name) {
+  if (!state.data) return;
+  const c = (state.data.view.topClients || []).find(x => x.client === name);
+  if (!c) return;
+  el('cmName').textContent = c.client;
+  const collected = c.revenue ? c.paid / c.revenue * 100 : 0;
+  el('cmBody').innerHTML =
+    `<div class="cm-grid">
+      ${insTile('ti-cash', 'Total Revenue', AED(c.revenue), c.orders + ' orders', 'ic-blue')}
+      ${insTile('ti-wallet', 'Paid', AED(c.paid), PCT(collected) + ' collected', 'ic-green')}
+      ${insTile('ti-alert-triangle', 'Outstanding', AED(c.outstanding), c.outstanding > 0 ? 'to collect' : 'fully paid', c.outstanding > 0 ? 'ic-red' : 'ic-green')}
+      ${insTile('ti-receipt', 'Avg Order Value', AED(c.aov), c.repeat ? 'repeat client' : 'single order', 'ic-purple')}
+      ${insTile('ti-windmill', 'Lead Source', esc(c.lead), '', 'ic-teal')}
+      ${insTile('ti-calendar', 'Last Transaction', esc(c.lastDate || '—'), '', 'ic-blue')}
+    </div>
+    <div class="cm-actions"><button class="btn" id="cmGoPipeline"><i class="ti ti-list"></i> See orders in Pipeline</button></div>`;
+  el('clientModal').hidden = false;
+  const gp = el('cmGoPipeline'); if (gp) gp.addEventListener('click', () => { el('clientModal').hidden = true; go('pipeline'); });
+}
+el('cmClose').addEventListener('click', () => el('clientModal').hidden = true);
+el('clientModal').addEventListener('click', e => { if (e.target.id === 'clientModal') el('clientModal').hidden = true; });
 
 /* ---------------- MONEY ---------------- */
 function rMoney() {
@@ -337,42 +438,75 @@ function rClients() {
   const top = tc.slice(0, 10);
   draw('clChart', { type: 'bar', data: { labels: top.map(c => c.client || '—'), datasets: [{ data: top.map(c => c.revenue), backgroundColor: C.teal, borderRadius: 4 }] }, options: Object.assign(axis(true), { indexAxis: 'y' }) });
   const byLead = {}; tc.forEach(c => byLead[c.lead] = (byLead[c.lead] || 0) + 1);
-  draw('clLead', { type: 'doughnut', data: { labels: Object.keys(byLead), datasets: [{ data: Object.values(byLead), backgroundColor: PALETTE, borderWidth: 0 }] }, options: Object.assign(doughnut(), { plugins: { legend: { position: 'right', labels: { color: C.muted, font: { size: 11 }, boxWidth: 11, padding: 9 } }, tooltip: { callbacks: { label: c => c.label + ': ' + NUM(c.parsed) + ' clients' } } } }) });
-  el('clTable').innerHTML = table(['Client', 'Source', 'Orders', 'Revenue', 'Outstanding', 'Last Order'], tc.slice(0, 40).map(c => [esc(c.client || '—'), esc(c.lead) + (c.repeat ? ' <span class="pill info">repeat</span>' : ''), NUM(c.orders), AED(c.revenue), c.outstanding > 0 ? `<span class="warn-txt">${AED(c.outstanding)}</span>` : AED(0), esc(c.lastDate)]));
+  const llabels = Object.keys(byLead);
+  draw('clLead', { type: 'doughnut', data: { labels: llabels, datasets: [{ data: Object.values(byLead), backgroundColor: llabels.map(leadColor), borderWidth: 0 }] }, options: Object.assign(doughnut(), { plugins: { legend: { position: 'right', labels: { color: C.muted, font: { size: 11 }, boxWidth: 11, padding: 9 } }, tooltip: { callbacks: { label: c => c.label + ': ' + NUM(c.parsed) + ' clients' } } } }) });
+  el('clTable').innerHTML = table(['Client', 'Source', 'Orders', 'Revenue', 'Outstanding', 'Last Order'], tc.slice(0, 50).map(c => [`<span class="lk" data-client="${esc(c.client)}">${esc(c.client || '—')}</span>`, esc(c.lead) + (c.repeat ? ' <span class="pill info">repeat</span>' : ''), NUM(c.orders), AED(c.revenue), c.outstanding > 0 ? `<span class="warn-txt">${AED(c.outstanding)}</span>` : AED(0), esc(c.lastDate)]));
+  el('clTable').querySelectorAll('[data-client]').forEach(s => s.addEventListener('click', () => openClient(s.dataset.client)));
 }
 
-/* ---------------- GOOGLE ADS ---------------- */
+/* ---------------- GOOGLE ADS — executive performance center (req #8,9,10) ---------------- */
 function rGoogle() {
-  const v = state.data.view, k = v.kpis;
-  const noSpend = k.adSpend <= 0;
+  const v = state.data.view, k = v.kpis, g = v.googleAds || {}, cmp = v.compare || {};
+  const noSpend = (g.spend || 0) <= 0;
+
+  // executive score gauge
+  const scoreTone = g.score >= 70 ? 'good' : g.score >= 45 ? 'warn' : 'bad';
+  el('gScore').innerHTML = `<div class="score-ring ${scoreTone}"><span class="score-n">${NUM(g.score || 0)}</span><span class="score-x">/100</span></div><div class="score-lbl">Google Ads<br>Executive Score</div>`;
+
+  // KPIs (full set, req #8)
   const cards = [
-    kpi('Google Ads Revenue', AED(k.googleRevenue), PCT(k.googleRevenueShare) + ' of total revenue'),
-    kpi('Google Ads Orders', NUM(k.googleOrders), 'attributed orders'),
-    kpi('Ad Spend', noSpend ? 'AED 0.00' : AED(k.adSpend), noSpend ? 'none recorded this period' : 'from Expenses', noSpend ? 'warn' : ''),
+    kpi('Google Ads Revenue', AED(g.revenue), PCT(g.revenueShare) + ' of total revenue'),
+    kpi('Google Ads Orders', NUM(g.orders), 'attributed orders'),
+    kpi('Ad Spend', AED(g.spend), noSpend ? 'none this period' : 'from Expenses', noSpend ? 'warn' : ''),
+    kpi('ROAS', g.roas == null ? 'N/A' : g.roas.toFixed(2) + 'x', g.roas == null ? 'needs spend' : 'revenue / spend', g.roas == null ? 'neutral' : g.roas >= 2 ? 'good' : 'warn'),
+    kpi('CPA', g.cpa == null ? 'N/A' : AED(g.cpa), g.cpa == null ? 'needs spend' : 'cost / order'),
+    kpi('Net / Profit After Ads', AED(g.profitAfterAdSpend), 'revenue − spend', g.profitAfterAdSpend >= 0 ? 'good' : 'bad'),
+    kpi('Avg Order Value', AED(g.aov), 'per Google order'),
+    kpi('Conversion Rate', PCT(g.conversionRate), 'orders paid', g.conversionRate >= 70 ? 'good' : 'warn'),
+    kpi('Revenue Growth', cmp.hasPrev && cmp.revenue != null ? (cmp.revenue >= 0 ? '+' : '') + PCT(cmp.revenue) : 'N/A', 'vs previous period', !cmp.hasPrev ? 'neutral' : cmp.revenue >= 0 ? 'good' : 'bad'),
+    kpi('Orders Growth', cmp.hasPrev && cmp.orders != null ? (cmp.orders >= 0 ? '+' : '') + PCT(cmp.orders) : 'N/A', 'vs previous period', !cmp.hasPrev ? 'neutral' : cmp.orders >= 0 ? 'good' : 'bad'),
+    kpi('Best Revenue Day', g.bestDays && g.bestDays[0] ? AEDk(g.bestDays[0].revenue) : '—', g.bestDays && g.bestDays[0] ? g.bestDays[0].date : ''),
+    kpi('Google Revenue Share', PCT(g.revenueShare), 'of all revenue'),
   ];
-  if (!noSpend) cards.push(
-    kpi('ROAS', k.roas.toFixed(2) + 'x', 'revenue per AED 1 spent', k.roas >= 2 ? 'good' : 'warn'),
-    kpi('CPA (cost / order)', AED(k.costPerOrder), 'ad spend / orders'),
-    kpi('Net from Ads', AED(k.netFromAds), 'revenue − spend', k.netFromAds >= 0 ? 'good' : 'bad'),
-  );
   el('gKpis').innerHTML = cards.join('');
-  const note = el('gNote');
-  note.hidden = false;
-  if (noSpend) {
-    note.className = 'callout warn';
-    note.innerHTML = `<i class="ti ti-alert-triangle"></i> <b>No Google Ads spend recorded for this selected period.</b> ROAS and CPA are hidden because they cannot be calculated without spend. Revenue & orders above are real — attributed from <b>Lead Source = "Google Ads"</b>. Add a "Google Ads" expense in this date range to see ROAS / CPA.`;
-  } else {
-    note.className = 'callout';
-    note.innerHTML = `<i class="ti ti-info-circle"></i> Attribution: revenue & orders where <b>Lead Source = "Google Ads"</b>; spend from Expenses category "Google Ads". ROAS ${k.roas.toFixed(2)}x = AED ${k.roas.toFixed(2)} earned per AED 1 spent · CPA ${AED(k.costPerOrder)} per order.`;
-  }
-  const oth = Math.max(0, k.totalRevenue - k.googleRevenue);
-  draw('gShare', { type: 'doughnut', data: { labels: ['Google Ads', 'Other sources'], datasets: [{ data: [k.googleRevenue, oth], backgroundColor: [C.accent, '#64748B'], borderWidth: 0 }] }, options: doughnut() });
-  // google revenue over time from googleAdsLeads
-  const byDay = {}; v.googleAdsLeads.forEach(g => byDay[g.date] = (byDay[g.date] || 0) + g.amount);
-  const days = Object.keys(byDay).sort();
-  draw('gTrend', { type: 'line', data: { labels: days, datasets: [{ data: days.map(d => Math.round(byDay[d])), borderColor: C.blue, backgroundColor: 'rgba(59,130,246,.15)', fill: true, tension: .35, borderWidth: 3, pointRadius: 2 }] }, options: axis(true) });
-  el('gOrders').innerHTML = table(['Date', 'Client', 'Service', 'Amount', 'Payment'], v.googleAdsLeads.map(g => [esc(g.date), esc(g.client || '—'), esc(g.service), AED(g.amount), badge(g.status)]));
+
+  const note = el('gNote'); note.hidden = false;
+  if (noSpend) { note.className = 'callout warn'; note.innerHTML = `<i class="ti ti-alert-triangle"></i> <b>No Google Ads spend recorded for this period.</b> ROAS & CPA need spend (from an Expenses "Google Ads" row). Revenue, orders & growth above are real — attributed from <b>Lead Source = "Google Ads"</b>.`; }
+  else { note.className = 'callout'; note.innerHTML = `<i class="ti ti-info-circle"></i> Attribution: <b>Lead Source = "Google Ads"</b> · spend from Expenses "Google Ads". Score = ROAS + CPA + conversion. ROAS ${g.roas.toFixed(2)}x · CPA ${AED(g.cpa)} · conversion ${PCT(g.conversionRate)}.`; }
+
+  // Revenue vs Spend (monthly)
+  const rt = g.roasTrend || [];
+  draw('gRevSpend', { type: 'bar', data: { labels: rt.map(r => r.label), datasets: [
+    { label: 'Revenue', data: rt.map(r => r.revenue), backgroundColor: C.green, borderRadius: 4 },
+    { label: 'Ad Spend', data: rt.map(r => r.spend), backgroundColor: C.red, borderRadius: 4 },
+  ] }, options: Object.assign(axis(true), { plugins: { legend: { display: true, labels: { color: C.muted, boxWidth: 11 } }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + AED(c.parsed.y) } } } }) });
+  // ROAS trend
+  draw('gRoasTrend', { type: 'line', data: { labels: rt.map(r => r.label), datasets: [{ data: rt.map(r => r.roas), borderColor: C.accent, backgroundColor: 'rgba(124,92,252,.15)', fill: true, tension: .35, borderWidth: 3, pointRadius: 3, spanGaps: true }] }, options: Object.assign(axis(false), { plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => 'ROAS ' + (c.parsed.y == null ? 'N/A' : c.parsed.y.toFixed(2) + 'x') } } } }) });
+  // Orders vs Revenue (daily, dual axis)
+  const dl = (g.dayList || []);
+  draw('gOrdersRev', { type: 'bar', data: { labels: dl.map(d => d.date.slice(5)), datasets: [
+    { type: 'line', label: 'Revenue', yAxisID: 'y', data: dl.map(d => d.revenue), borderColor: C.green, backgroundColor: 'rgba(45,190,139,.12)', fill: true, tension: .35, borderWidth: 2, pointRadius: 1 },
+    { label: 'Orders', yAxisID: 'y1', data: dl.map(d => d.orders), backgroundColor: C.blue, borderRadius: 3 },
+  ] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, labels: { color: C.muted, boxWidth: 11 } } }, scales: { x: { ticks: { color: C.muted, font: { size: 9 }, maxTicksLimit: 12 }, grid: { color: gridc() } }, y: { position: 'left', ticks: { color: C.muted, font: { size: 10 }, callback: vv => vv >= 1000 ? vv / 1000 + 'K' : vv }, grid: { color: gridc() } }, y1: { position: 'right', ticks: { color: C.muted, font: { size: 10 } }, grid: { drawOnChartArea: false } } } } });
+  // share
+  const oth = Math.max(0, k.totalRevenue - g.revenue);
+  draw('gShare', { type: 'doughnut', data: { labels: ['Google Ads', 'Other sources'], datasets: [{ data: [g.revenue, oth], backgroundColor: [C.green, '#64748B'], borderWidth: 0 }] }, options: doughnut() });
+  // by service / status / delivery
+  const dset = (arr, colors) => ({ type: 'doughnut', data: { labels: arr.map(x => x.name), datasets: [{ data: arr.map(x => x.revenue), backgroundColor: colors || PALETTE, borderWidth: 0 }] }, options: doughnut() });
+  draw('gByService', dset(g.byService || []));
+  draw('gByStatus', dset((g.byStatus || []).map(x => ({ name: titleCase(x.name), revenue: x.revenue })), (g.byStatus || []).map(x => ({ paid: C.green, outstanding: C.red, partial: C.orange, cancelled: '#9CA3AF' }[x.name] || C.blue))));
+  draw('gByDelivery', dset((g.byDelivery || []).map(x => ({ name: titleCase(x.name), revenue: x.revenue }))));
+
+  // tables (req #10)
+  el('gTopClients').innerHTML = table(['Client', 'Revenue', 'Orders', 'Share'], (g.topClients || []).map(c => [`<span class="lk" data-client="${esc(c.name)}">${esc(c.name)}</span>`, AED(c.revenue), NUM(c.orders), PCT(c.share)]));
+  el('gTopClients').querySelectorAll('[data-client]').forEach(s => s.addEventListener('click', () => openClient(s.dataset.client)));
+  el('gTopServices').innerHTML = table(['Service', 'Revenue', 'Orders', 'Share'], (g.topServices || []).map(s => [esc(s.name), AED(s.revenue), NUM(s.orders), PCT(s.share)]));
+  el('gBestDays').innerHTML = table(['Date', 'Revenue', 'Orders'], (g.bestDays || []).map(d => [esc(d.date), AED(d.revenue), NUM(d.orders)]));
+  el('gRoasDays').innerHTML = table(['Date', 'ROAS', 'Revenue', 'Spend'], (g.highestRoasDays || []).map(d => [esc(d.date), d.roas == null ? '—' : d.roas.toFixed(2) + 'x', AED(d.revenue), AED(d.spend)]));
+  el('gSpendDays').innerHTML = table(['Date', 'Spend', 'Revenue', 'ROAS'], (g.highestSpendDays || []).map(d => [esc(d.date), AED(d.spend), AED(d.revenue), d.roas == null ? '—' : d.roas.toFixed(2) + 'x']));
+  el('gOrders').innerHTML = table(['Date', 'Client', 'Service', 'Amount', 'Payment'], (v.googleAdsLeads || []).map(o => [esc(o.date), esc(o.client || '—'), esc(o.service), AED(o.amount), badge(o.status)]));
 }
+function titleCase(s) { return String(s || '').replace(/\b\w/g, c => c.toUpperCase()); }
 
 /* ---------------- REPORTS ---------------- */
 function rReports() {
@@ -432,7 +566,7 @@ function filteredForensic() {
   });
 }
 function rAudit() {
-  const d = state.data, vd = d.validation;
+  const d = state.data, vd = d.validation, v = d.view;
   loadForensic(false); // refresh in background; re-renders when done
 
   // populate user filter from known users
@@ -468,15 +602,22 @@ function rAudit() {
       esc(c.user || '—'),
     ]));
 
-  // data validation card
+  // data validation card (req #5: missing amount is INFO, not an error — row is still logged)
   el('auditValidation').innerHTML = kv([
     ['Reconciliation', vd.reconciles ? '<span class="pill good">Balanced (Paid + Outstanding = Total)</span>' : '<span class="pill bad">Gap ' + AEDk(vd.gap) + '</span>'],
-    ['Missing amounts', `<span class="pill ${vd.missingAmounts ? 'warn' : 'good'}">${NUM(vd.missingAmounts)}</span>`],
-    ['Off-list statuses', `<span class="pill ${vd.brokenStatus ? 'warn' : 'good'}">${NUM(vd.brokenStatus)}</span>`],
-    ['Cancelled (excluded)', NUM(vd.cancelled)],
-    ['Skipped rows (no/invalid date)', NUM(vd.skipped.noDate + vd.skipped.badDate)],
+    ['Rows missing amounts', `<span class="pill info">${NUM(vd.missingAmounts)}</span> <span class="dimv small">— logged & tracked, not an error</span>`],
+    ['Statuses off Settings list', `<span class="pill ${vd.brokenStatus ? 'warn' : 'good'}">${NUM(vd.brokenStatus)}</span>`],
+    ['Cancelled (excluded from totals)', NUM(vd.cancelled)],
+    ['Skipped rows (no/invalid date)', `<span class="pill ${(vd.skipped.noDate + vd.skipped.badDate) ? 'warn' : 'good'}">${NUM(vd.skipped.noDate + vd.skipped.badDate)}</span>`],
+    ['Possible duplicates', `<span class="pill ${(v.duplicates || []).length ? 'warn' : 'good'}">${NUM((v.duplicates || []).length)}</span>`],
     ['Forensic events stored', NUM(forensic.total)],
   ]);
+
+  // duplicate detection center
+  const dupes = v.duplicates || [];
+  el('auditDupes').innerHTML = dupes.length
+    ? table(['Date', 'Client', 'Reference', 'Amount', 'Count', 'Sheet rows'], dupes.map(x => [esc(x.date), esc(x.client || '—'), esc(x.ref || '—'), AED(x.amount), `<span class="pill warn">${x.count}×</span>`, esc((x.rows || []).join(', '))]))
+    : '<div class="empty" style="color:var(--green)">✓ No duplicate records detected (same date + client + amount + reference)</div>';
 
   // system & sync events (activity feed — server + this-browser actions)
   const sys = clientEvents.concat((d.audit || []).map(e => ({ ts: e.ts, status: e.status, event: e.event, details: e.details, client: false })))
@@ -579,12 +720,31 @@ function rHealth() {
     return `<div class="chk"><i class="ti ${ic} ${cls}"></i><span>${esc(label)}</span><span class="chk-s ${cls}">${ok ? 'PASS' : (soft ? 'WARN' : 'FAIL')}</span></div>`;
   }).join('');
 
-  el('healthWarn').innerHTML = table(['Time', 'Event', 'Status', 'Details'],
-    warnEvents.slice(0, 40).map(e => {
-      const t = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dubai', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(e.ts));
-      return [`<span class="mono small">${t}</span>`, esc(e.event), badge2(e.status), esc(e.details)];
-    }));
-  if (!warnEvents.length) el('healthWarn').innerHTML = '<div class="empty" style="color:var(--green)">✓ No active warnings or failed validations</div>';
+  // A · CRITICAL ISSUES
+  const v = d.view;
+  const sevItem = (ic, t2, s2) => `<div class="sev-item"><i class="ti ${ic}"></i><div><div class="si-t">${esc(t2)}</div><div class="si-s">${esc(s2 || '')}</div></div></div>`;
+  const critical = [];
+  if (d.source === 'error') critical.push(['ti-plug-connected-x', 'Google Sheet not connected', ss.message]);
+  if (!vd.reconciles) critical.push(['ti-alert-octagon', 'Reconciliation gap ' + AEDk(vd.gap), 'Paid + Outstanding ≠ Total — investigate']);
+  if (vd.skipped.badDate) critical.push(['ti-calendar-x', vd.skipped.badDate + ' rows with invalid dates', 'excluded from all totals']);
+  const delsToday = (forensic.changes || []).filter(c => c.changeType === 'DELETE' && dubaiDayKey(c.ts) === m.todayDubai);
+  if (delsToday.length) critical.push(['ti-trash', delsToday.length + ' transaction(s) deleted today', 'review in Audit Log']);
+  el('healthCritical').innerHTML = critical.length ? critical.map(c => sevItem(c[0], c[1], c[2])).join('') : '<div class="empty" style="color:var(--green)">✓ No critical issues — dashboard is healthy</div>';
+
+  // B · WARNINGS
+  const warnings = [];
+  if (vd.brokenStatus) warnings.push(['ti-alert-triangle', vd.brokenStatus + ' statuses off the Settings list', 'value not in the Settings tab']);
+  if (vd.futureDates) warnings.push(['ti-calendar', vd.futureDates + ' future-dated rows', 'date later than today']);
+  if (vd.skipped.noDate) warnings.push(['ti-calendar-off', vd.skipped.noDate + ' rows without a date', 'excluded from time analysis']);
+  if ((v.duplicates || []).length) warnings.push(['ti-copy', (v.duplicates || []).length + ' possible duplicate records', 'see Audit Log → Duplicate Detection']);
+  if (v.diag && v.diag.isEmpty) warnings.push(['ti-calendar-off', 'Selected range has no transactions', 'latest data ' + m.maxDate]);
+  el('healthWarnings').innerHTML = warnings.length ? warnings.map(c => sevItem(c[0], c[1], c[2])).join('') : '<div class="empty" style="color:var(--green)">✓ No warnings</div>';
+
+  // D · SYNC EVENTS
+  el('healthSync').innerHTML = (d.audit || []).slice(0, 40).map(e => {
+    const t = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dubai', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(e.ts));
+    return `<div class="log-row"><span class="lt mono">${t}</span><span class="le">${esc(e.event)}</span><span>${badge2(e.status)}</span><span class="ld">${esc(e.details)}</span></div>`;
+  }).join('') || '<div class="empty">No sync events</div>';
 }
 
 /* ---------------- SETTINGS ---------------- */
@@ -650,14 +810,15 @@ function buildNotifications() {
   const m = d.meta, vd = d.validation, v = d.view, ss = m.sheetStatus || {};
   const ts0 = m.lastSync || m.fetchedAt || new Date().toISOString();
   const ns = [];
-  if (d.source === 'error') ns.push({ id: 'err|' + (ss.checkedAt || ts0), level: 'error', icon: 'ti-plug-connected-x', title: 'Google Sheet not connected', detail: 'Dashboard is showing NO data (no stale Excel). Share the Sheet "Anyone with link → Viewer".', ts: ss.checkedAt || ts0 });
-  if (!vd.reconciles) ns.push({ id: 'recon|gap', level: 'error', icon: 'ti-alert-octagon', title: 'Reconciliation gap detected', detail: 'Paid + Outstanding ≠ Total (gap ' + AEDk(vd.gap) + ')', ts: ts0 });
-  if (vd.missingAmounts) ns.push({ id: 'amt|' + vd.missingAmounts, level: 'warning', icon: 'ti-alert-triangle', title: vd.missingAmounts + ' transactions missing amounts', detail: 'Open Audit Log to see affected rows', ts: ts0 });
-  if (vd.brokenStatus) ns.push({ id: 'status|' + vd.brokenStatus, level: 'warning', icon: 'ti-alert-triangle', title: vd.brokenStatus + ' statuses off the Settings list', detail: 'Payment status value not in the Settings tab', ts: ts0 });
-  if (v.diag && v.diag.isEmpty) ns.push({ id: 'empty|' + v.filter.from + '|' + v.filter.to, level: 'warning', icon: 'ti-calendar-off', title: 'Selected range has no transactions', detail: v.filter.from + ' → ' + v.filter.to + ' · latest data ' + m.maxDate, ts: ts0 });
-  if (m.lastSync) ns.push({ id: 'sync|' + m.lastSync, level: 'info', icon: 'ti-refresh', title: 'Data refreshed', detail: 'Synced ' + new Date(m.lastSync).toLocaleTimeString() + ' · ' + NUM(m.totalRecords) + ' transactions', ts: ts0 });
-  ns.push({ id: 'src|' + d.source, level: d.source === 'live' ? 'info' : 'warning', icon: 'ti-database', title: 'Source: ' + (m.sourceLabel || d.source), detail: d.source === 'live' ? 'Connected live to Google Sheet' : (m.sourceMeta ? m.sourceMeta.workbook : '—'), ts: ts0 });
-  if (ss.state === 'private') ns.push({ id: 'sheet|private', level: 'warning', icon: 'ti-cloud-off', title: 'Google Sheet not connected (private)', detail: 'Share it "Anyone with link → Viewer" to go LIVE · Excel fallback in use', ts: ss.checkedAt || m.lastSync });
+  if (d.source === 'error') ns.push({ id: 'err|' + (ss.checkedAt || ts0), level: 'error', icon: 'ti-plug-connected-x', title: 'Google Sheet not connected', detail: 'Dashboard is showing NO data. Open System Health.', ts: ss.checkedAt || ts0, goto: 'health' });
+  if (!vd.reconciles) ns.push({ id: 'recon|gap', level: 'error', icon: 'ti-alert-octagon', title: 'Reconciliation gap detected', detail: 'Paid + Outstanding ≠ Total (gap ' + AEDk(vd.gap) + ') — open Audit Log', ts: ts0, goto: 'audit' });
+  // missing amount ≠ error (req #5): informational only — rows are still logged
+  if (vd.missingAmounts) ns.push({ id: 'amt|' + vd.missingAmounts, level: 'info', icon: 'ti-pencil', title: vd.missingAmounts + ' transactions missing amounts', detail: 'Informational — open Audit Log to review affected rows', ts: ts0, goto: 'audit' });
+  if (vd.brokenStatus) ns.push({ id: 'status|' + vd.brokenStatus, level: 'warning', icon: 'ti-alert-triangle', title: vd.brokenStatus + ' statuses off the Settings list', detail: 'Open Audit Log → Data Validation', ts: ts0, goto: 'audit' });
+  if (v.diag && v.diag.isEmpty) ns.push({ id: 'empty|' + v.filter.from + '|' + v.filter.to, level: 'warning', icon: 'ti-calendar-off', title: 'Selected range has no transactions', detail: v.filter.from + ' → ' + v.filter.to + ' · latest data ' + m.maxDate, ts: ts0, goto: 'overview' });
+  if (m.lastSync) ns.push({ id: 'sync|' + m.lastSync, level: 'info', icon: 'ti-refresh', title: 'Data refreshed', detail: 'Synced ' + new Date(m.lastSync).toLocaleTimeString() + ' · ' + NUM(m.totalRecords) + ' transactions — open Sync Events', ts: ts0, goto: 'health' });
+  ns.push({ id: 'src|' + d.source, level: d.source === 'live' ? 'info' : 'warning', icon: 'ti-database', title: (m.sourceLabel || d.source), detail: d.source === 'live' ? 'Connected live to Google Sheet — open System Health' : (m.sourceMeta ? m.sourceMeta.workbook : '—'), ts: ts0, goto: 'health' });
+  if (ss.state === 'private') ns.push({ id: 'sheet|private', level: 'warning', icon: 'ti-cloud-off', title: 'Google Sheet not connected (private)', detail: 'Open System Health for details', ts: ss.checkedAt || m.lastSync, goto: 'health' });
   return ns;
 }
 function unreadCount() { const r = readSet(); return buildNotifications().filter(n => (n.level === 'warning' || n.level === 'error') && !r.has(n.id)).length; }
@@ -665,12 +826,21 @@ function renderNotifications() {
   const ns = buildNotifications(), r = readSet(), unread = unreadCount();
   const badge = el('nbadge');
   if (unread > 0) { badge.hidden = false; badge.textContent = unread > 9 ? '9+' : unread; } else { badge.hidden = true; }
-  el('notifList').innerHTML = ns.map(n => {
+  el('notifList').innerHTML = ns.map((n, i) => {
     const isUnread = (n.level === 'warning' || n.level === 'error') && !r.has(n.id);
     const lv = { info: 'info', warning: 'warn', error: 'bad' }[n.level] || 'neutral';
     const t = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dubai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(n.ts));
-    return `<div class="nrow ${isUnread ? 'unread' : ''}"><div class="nic ${lv}"><i class="ti ${n.icon}"></i></div><div class="nbody"><div class="ntitle">${esc(n.title)}</div><div class="ndetail">${esc(n.detail)}</div></div><div class="ntime mono">${t}</div></div>`;
+    return `<div class="nrow clickable ${isUnread ? 'unread' : ''}" data-ni="${i}"><div class="nic ${lv}"><i class="ti ${n.icon}"></i></div><div class="nbody"><div class="ntitle">${esc(n.title)}</div><div class="ndetail">${esc(n.detail)} <span class="nrow-go">›</span></div></div><div class="ntime mono">${t}</div></div>`;
   }).join('') || '<div class="empty">No notifications</div>';
+  // make every notification clickable → navigate + deep-link + mark read
+  el('notifList').querySelectorAll('.nrow[data-ni]').forEach(row => row.addEventListener('click', () => {
+    const n = ns[+row.dataset.ni]; if (!n) return;
+    const s = readSet(); s.add(n.id); saveRead(s);
+    logEvent('info', 'Notification opened', n.title);
+    closeDropdowns();
+    if (n.goto) go(n.goto);
+    renderNotifications();
+  }));
 }
 function closeDropdowns(except) { ['notifPanel', 'profilePanel'].forEach(id => { if (id !== except) el(id).hidden = true; }); }
 el('bellBtn').addEventListener('click', e => { e.stopPropagation(); const p = el('notifPanel'); const open = p.hidden; closeDropdowns('notifPanel'); p.hidden = !open; if (open) renderNotifications(); });

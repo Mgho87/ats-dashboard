@@ -324,3 +324,93 @@ body.light .exec-card{background:linear-gradient(160deg,#eef2fb,#fff)}
 /* mobile: drop the 300px floor so the topbar fits; truncate the long brand name */
 .tb-left{min-width:0}.brandtxt{min-width:0}.brand-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
 @media print{.topbar,.sidebar,.filterbar,.foot,.head-actions{display:none!important}.page{display:none!important}.page-reports,#page-reports{display:flex!important}.content{padding:0}body{background:#fff;color:#000}}
+
+/* ===================== PHASE: UI/UX REFINEMENT (req 1-17 + extras) ===================== */
+/* quick actions (#16) */
+.quick-actions{display:flex;gap:10px;flex-wrap:wrap}
+.qa-btn{display:inline-flex;align-items:center;gap:9px;border:1px solid var(--line);background:var(--card);color:var(--text);font-weight:700;font-size:12.5px;padding:9px 14px;border-radius:12px;cursor:pointer;transition:transform .12s,border-color .12s,background .12s}
+.qa-btn:hover{transform:translateY(-2px);border-color:var(--line2);background:var(--panel2)}
+.qa-btn:active{transform:translateY(0)}
+.qa-ic{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex:none}
+.ic-gold{background:rgba(230,184,74,.16);color:var(--gold)}
+
+/* executive insights (#15) */
+.insights-card h4 i,.card h4 i{margin-right:6px;font-size:14px;vertical-align:-2px}
+.insights-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}
+.ins-tile{display:flex;gap:11px;align-items:flex-start;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 13px}
+.ins-ic{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex:none}
+.ins-b{min-width:0}
+.ins-l{font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.3px;text-transform:uppercase}
+.ins-v{font-size:16px;font-weight:800;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ins-s{font-size:11px;color:var(--dim)}
+
+/* forecast / risk / opportunities */
+.fc-basis{font-size:11px;color:var(--dim);margin-top:10px;padding-top:9px;border-top:1px solid var(--line);line-height:1.5}
+.risk-row{display:flex;align-items:center;gap:9px;padding:11px 0;border-bottom:1px solid var(--line);font-size:13px;font-weight:600}
+.risk-row:last-of-type{border-bottom:none}
+.risk-row b{margin-left:auto;font-size:16px}
+.risk-amt{font-size:11.5px;color:var(--muted);min-width:60px;text-align:right;font-variant-numeric:tabular-nums}
+.risk-dot{width:10px;height:10px;border-radius:50%;flex:none}
+.risk-row.high .risk-dot{background:var(--red)} .risk-row.med .risk-dot{background:var(--orange)} .risk-row.low .risk-dot{background:var(--green)}
+.risk-high{color:var(--red);font-weight:700} .risk-medium{color:var(--orange);font-weight:700} .risk-low{color:var(--green);font-weight:700}
+.opp-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.opp-row:last-of-type{border-bottom:none}
+.opp-c{font-size:13px;font-weight:700}
+.opp-s{font-size:11px;color:var(--muted);margin-top:2px}
+.opp-v{font-weight:800;font-size:14px;color:var(--red);white-space:nowrap}
+.clickable{cursor:pointer} .opp-row.clickable:hover{background:var(--panel2);border-radius:8px}
+
+/* google ads score ring (#8) */
+.g-score{display:flex;align-items:center;gap:12px}
+.score-ring{width:60px;height:60px;border-radius:50%;display:flex;align-items:baseline;justify-content:center;font-weight:900;border:3px solid var(--line2)}
+.score-ring.good{border-color:var(--green);color:var(--green)} .score-ring.warn{border-color:var(--orange);color:var(--orange)} .score-ring.bad{border-color:var(--red);color:var(--red)}
+.score-n{font-size:22px} .score-x{font-size:11px;color:var(--muted)}
+.score-lbl{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;line-height:1.3}
+
+/* severity groups — system health (#11) */
+.sev-list{display:flex;flex-direction:column;gap:8px}
+.sev-item{display:flex;gap:11px;align-items:flex-start;padding:10px 12px;border-radius:10px;background:var(--panel2);border:1px solid var(--line)}
+.sev-item i{font-size:18px;flex:none}
+.si-t{font-size:13px;font-weight:700} .si-s{font-size:11.5px;color:var(--muted);margin-top:1px}
+.card.sev-critical{border-color:rgba(240,97,106,.35)} .card.sev-critical h4{color:var(--red)} .card.sev-critical .sev-item i{color:var(--red)}
+.card.sev-warning{border-color:rgba(242,162,60,.32)} .card.sev-warning h4{color:var(--orange)} .card.sev-warning .sev-item i{color:var(--orange)}
+.card.sev-info h4{color:#5b9bf6} .card.sev-info .kv-top{margin-top:14px;border-top:1px solid var(--line);padding-top:6px}
+
+/* client 360 modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(5,8,16,.72);display:flex;align-items:center;justify-content:center;z-index:80;padding:20px}
+.modal{background:var(--bg2);border:1px solid var(--line2);border-radius:18px;width:640px;max-width:96vw;max-height:88vh;overflow:auto;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg2)}
+.modal-head h3{margin:0;font-size:18px;font-weight:800}
+.modal-body{padding:18px 20px}
+.cm-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.cm-actions{margin-top:16px}
+
+/* net profit sidebar mini sparks (#12) */
+.es-spark{height:24px;margin-top:6px}
+
+/* notifications clickable (#2) */
+.nrow.clickable{cursor:pointer;transition:background .12s}
+.nrow.clickable:hover{background:var(--panel2)}
+.nrow-go{color:var(--accent2);font-weight:800}
+
+/* clickable client links */
+.lk{color:var(--accent2);cursor:pointer;font-weight:700;border-bottom:1px dashed transparent}
+.lk:hover{border-bottom-color:var(--accent2)}
+
+/* settings/validation kv grid (#4 full width) */
+.kv-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 26px}
+@media(max-width:760px){.kv-grid{grid-template-columns:1fr}}
+
+/* GLOBAL polish (#14): bigger charts, more rows, smoother feedback */
+.chart-box{height:300px}
+.chart-box.sm{height:240px}
+.mini-table.tall{max-height:560px}
+.mini-table.xtall{max-height:760px;overflow:auto}
+.card{transition:border-color .15s}
+.dt tbody tr{transition:background .1s}
+.btn,.icon-btn,.exec-btn,.btn-sync,.fsel,.qa-btn{transition:all .13s}
+.btn:active,.icon-btn:active{transform:scale(.96)}
+.kc{transition:border-color .15s,transform .12s}
+.insights-grid .ins-tile{transition:border-color .15s}
+@media(max-width:1100px){.insights-grid{grid-template-columns:repeat(2,1fr)}.cm-grid{grid-template-columns:1fr}}
+@media(max-width:620px){.insights-grid{grid-template-columns:1fr}}
