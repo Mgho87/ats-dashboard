@@ -990,7 +990,10 @@ function rAudit() {
     : '<div class="empty" style="color:var(--green)">✓ No duplicate records detected (same date + client + amount + reference)</div>';
 
   // system & sync events (activity feed — server + this-browser actions)
+  // req #8: System Events obey the SAME global date filter as the forensic log (by event time).
+  const _sf = (v.filter && v.filter.from) || '0000-00-00', _st = (v.filter && v.filter.to) || '9999-99-99';
   const sys = clientEvents.concat((d.audit || []).map(e => ({ ts: e.ts, status: e.status, event: e.event, details: e.details, client: false })))
+    .filter(e => { const day = dubaiDayKey(e.ts); return !day || (day >= _sf && day <= _st); })
     .sort((a, b) => (a.ts < b.ts ? 1 : -1)).slice(0, 60);
   el('auditSystem').innerHTML = sys.map(e => `<div class="log-row"><span class="lt mono">${fmtT(e.ts)}</span><span class="le">${esc(e.event)}${e.client ? ' <span class="pill neutral xtag">you</span>' : ''}</span><span>${badge2(e.status)}</span><span class="ld">${esc(e.details)}</span></div>`).join('') || '<div class="empty">No events</div>';
 }

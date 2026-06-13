@@ -586,7 +586,7 @@ body.compact .chart-box{height:242px}body.compact .chart-box.sm{height:200px}
 
 /* ===================== PASS 1 (v2) — layout/visual: funnel · scroll tables · sidebar · zoom-robust ===================== */
 /* T5 — compact Google Ads funnel: less padding, tighter gap, lower cap */
-.g-funnel.gfunnel-cap{max-height:20rem;overflow:auto;padding:2px 0;gap:0}
+.g-funnel.gfunnel-cap{max-height:19rem;overflow:auto;padding:1px 0;gap:0}
 .gfunnel-cap .gf-stage{padding:0}
 .gfunnel-cap .gf-bar{padding:6px 14px}
 .gfunnel-cap .gf-n{font-size:1.05rem}
