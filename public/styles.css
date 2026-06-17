@@ -39,6 +39,7 @@ a{cursor:pointer}
 .icon-btn{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative}
 .icon-btn:hover{color:var(--text);background:var(--panel2)}
 .ham{display:none}
+.sb-backdrop{display:none}
 .tb-right{display:flex;align-items:center;gap:10px}
 .clock{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25;padding-right:6px}
 .clock #clock-time{font-size:13px;font-weight:700}
@@ -319,7 +320,9 @@ body.light .exec-card{background:linear-gradient(160deg,#eef2fb,#fff)}
 /* responsive */
 @media(max-width:1300px){.hero{grid-template-columns:repeat(2,1fr)}.kpi-strip{grid-template-columns:repeat(3,1fr)}.today-cells{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:1100px){.grid-2,.grid-3{grid-template-columns:1fr}.span2{grid-column:auto}}
-@media(max-width:1000px){.sidebar{position:fixed;left:0;top:62px;z-index:35;transform:translateX(-100%);transition:.25s;background:var(--bg2)}.sidebar.open{transform:none}.ham{display:flex}.src-pill{margin:0}}
+/* Sidebar off-canvas/drawer behaviour is defined ONCE in the ≤62rem (≤992px) block
+   below (Round 6). The old max-width:1000px sidebar rules were removed to avoid two
+   conflicting breakpoints controlling the same transform. */
 @media(max-width:680px){.hero,.kpi-strip,.today-cells{grid-template-columns:1fr 1fr}.profile .pmeta,.clock{display:none}.brand-sub{display:none}.log-head,.log-row{grid-template-columns:90px 1fr;}.log-head span:nth-child(3),.log-head span:nth-child(4),.log-row span:nth-child(3){display:none}
 /* mobile: drop the 300px floor so the topbar fits; truncate the long brand name */
 .tb-left{min-width:0}.brandtxt{min-width:0}.brand-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
@@ -631,3 +634,45 @@ html,body{overflow-x:hidden}            /* no horizontal PAGE overflow… */
 /* in-card layout reacts to the CARD's own width (container query), not the viewport */
 @container (max-width:34rem){ .exsum-grid,.insights-grid{grid-template-columns:1fr 1fr} }
 @container (max-width:20rem){ .exsum-grid,.insights-grid,.gqual{grid-template-columns:1fr} }
+
+/* ===================== ROUND 6 — device-class responsive (iPad landscape / portrait · PC · mobile · touch) ===================== */
+/* PC / desktop ≥1280px: keep generous spacing (defaults already handle this via auto-fit) */
+
+/* iPad landscape (≤1366px): keep a desktop-style control center but compact the sidebar + header */
+@media (max-width:85.375rem){            /* ≤1366px */
+  .sidebar{width:13rem;padding:.9rem .6rem}
+  .snav a{padding:.6rem .7rem;font-size:.82rem;gap:.7rem}
+  .snav a i{font-size:1.05rem}
+  .exec-card{padding:.8rem}
+}
+
+/* iPad portrait & below (≤992px): sidebar collapses to an off-canvas drawer (hamburger).
+   iPad LANDSCAPE (1024px) stays above this, keeping the compact sidebar visible. */
+@media (max-width:62rem){                /* ≤992px */
+  .sidebar{position:fixed;left:0;top:3.875rem;z-index:35;width:16rem;height:calc(100vh - 3.875rem);transform:translateX(-100%);transition:transform .25s ease;background:var(--bg2)}
+  .sidebar.open{transform:none;box-shadow:0 0 2.5rem rgba(0,0,0,.5)}
+  /* tap-anywhere backdrop, sits under the open drawer (z 34) but over content */
+  .sidebar.open ~ .sb-backdrop{display:block;position:fixed;inset:3.875rem 0 0 0;background:rgba(2,6,18,.55);z-index:34;border:0}
+  .ham{display:flex}
+  .src-pill{margin:0}
+  .content{padding:1rem .9rem 2.4rem}
+  .topbar{gap:.8rem}
+  .filterbar{top:3.875rem}
+}
+
+/* iPad portrait charts: a touch shorter so cards aren't overly tall */
+@media (max-width:48rem){                /* ≤768px (portrait tablet / large phone) */
+  .chart-box{height:16rem}
+  .chart-box.sm{height:13.5rem}
+  .page-head h1{font-size:1.35rem}
+  .topbar{padding:0 .8rem}
+}
+
+/* touch devices: comfortable tap targets (iPad/phone) */
+@media (pointer:coarse){
+  .fb-presets button,.fsel,.fdate,.btn,.btn-sync,.rep-tab,.opp-tab,.af-modes button{min-height:2.5rem}
+  .nf-filters button{min-height:2rem}
+  .snav a{min-height:2.7rem}
+  .icon-btn{width:2.6rem;height:2.6rem}
+  .lk,.mini-btn{min-height:1.9rem;display:inline-flex;align-items:center}
+}

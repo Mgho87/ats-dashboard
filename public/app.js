@@ -146,6 +146,8 @@ function go(page) {
 }
 document.querySelectorAll('[data-page]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); go(a.dataset.page); }));
 el('ham').addEventListener('click', () => el('sidebar').classList.toggle('open'));
+// tap the backdrop (mobile/portrait drawer) to close the sidebar
+el('sbBackdrop').addEventListener('click', () => el('sidebar').classList.remove('open'));
 el('refreshBtn').addEventListener('click', () => { logEvent('info', 'Refresh clicked', 'Manual data refresh requested'); load(true, true); });
 
 /* ---------- date presets ---------- */
@@ -264,9 +266,17 @@ function renderChrome() {
   el('rangeLabel').textContent = computeRange(state.filter.range).label + (v.filter.service !== 'All' ? ' · ' + v.filter.service : '') + (v.filter.lead !== 'All' ? ' · ' + v.filter.lead : '');
   // sidebar Net Profit summary (all-time, clear)
   const at = d.allTime.kpis;
-  el('execProfit').textContent = AED(at.netProfit);
-  el('execProfit').style.color = at.netProfit >= 0 ? 'var(--green)' : 'var(--red)';
-  el('execMargin').textContent = PCT(at.profitMargin);
+  const apc = d.allTime.profitCoverage || {};
+  if (apc.reliable) {
+    el('execProfit').textContent = AED(at.netProfit);
+    el('execProfit').style.color = at.netProfit >= 0 ? 'var(--green)' : 'var(--red)';
+    el('execMargin').textContent = PCT(at.profitMargin);
+  } else {
+    el('execProfit').textContent = '—';
+    el('execProfit').style.color = 'var(--muted)';
+    el('execMargin').textContent = 'n/a';
+  }
+  const ec = el('execProfit').closest('.exec-card'); if (ec) ec.title = apc.reliable ? NP_TIP : (NP_TIP + ' (' + (apc.reason || 'insufficient expense data') + ')');
   // req #10: compact amounts (AED 53.9K) + visual mini-bars instead of long numbers in tiny boxes
   el('execRev').textContent = AEDk(at.totalRevenue);
   el('execExp').textContent = AEDk(at.totalExpenses);
@@ -327,6 +337,16 @@ function renderPage(page) {
   ({ overview: rOverview, money: rMoney, collection: rCollection, pipeline: rPipeline, operations: rOps, clients: rClients, google: rGoogle, reports: rReports, audit: rAudit, health: rHealth, settings: rSettings }[page] || (() => {}))();
 }
 
+/* Net Profit display guardrail (req A) — shows a confident figure only when expense coverage
+   is reliable (whole-month/All-Time ranges with expense data); otherwise "—" + reason.
+   Does NOT change the calculation — only how it is presented. */
+const NP_TIP = 'Net Profit = revenue for the period − expenses dated in the period. Shown only for whole-month / All-Time ranges with expense data, because monthly fixed costs are not split per day.';
+function npView(v) {
+  const pc = v.profitCoverage || {}, k = v.kpis;
+  if (pc.reliable) return { ok: true, value: AED(k.netProfit), margin: PCT(k.profitMargin), tone: k.netProfit >= 0 ? 'good' : 'bad' };
+  return { ok: false, value: '—', margin: '—', tone: 'warn', reason: pc.reason || 'Insufficient expense data' };
+}
+
 /* ---------------- OVERVIEW ---------------- */
 function rOverview() {
   const d = state.data, v = d.view, k = v.kpis, rs = v.rangeSummary;
@@ -343,9 +363,11 @@ function rOverview() {
   el('h-out').textContent = AED(k.outstanding);
   el('h-out-ctx').textContent = 'Billed but not yet collected';
   el('h-out-mini').textContent = `${NUM(k.pendingOrders)} orders · ${PCT(outShare)} of revenue`;
-  el('h-profit').textContent = AED(k.netProfit);
-  el('h-profit-ctx').textContent = `Net profit margin ${PCT(k.profitMargin)}`;
-  el('h-profit-mini').textContent = `Revenue ${AEDk(k.totalRevenue)} · Expenses ${AEDk(k.totalExpenses)}`;
+  const np = npView(v);
+  el('h-profit').textContent = np.value;
+  el('h-profit-ctx').textContent = np.ok ? `Net profit margin ${np.margin}` : 'Insufficient expense data';
+  el('h-profit-mini').textContent = np.ok ? `Revenue ${AEDk(k.totalRevenue)} · Expenses ${AEDk(k.totalExpenses)}` : `${np.reason} · Rev ${AEDk(k.totalRevenue)} · Exp ${AEDk(k.totalExpenses)}`;
+  const hp = el('h-profit').closest('.hcard'); if (hp) hp.title = NP_TIP;
 
   el('today-label').textContent = v.filter.from + ' → ' + v.filter.to + ' · Asia/Dubai';
   el('today').innerHTML = [
@@ -601,7 +623,7 @@ function rMoney() {
     kpi('Paid / Collected', AED(k.paidRevenue), PCT(k.collectionRate) + ' collection', 'good'),
     kpi('Outstanding', AED(k.outstanding), NUM(k.pendingOrders) + ' orders owing', 'warn'),
     kpi('Expenses', AED(k.totalExpenses), 'Ad spend ' + AEDk(k.adSpend)),
-    kpi('Net Profit', AED(k.netProfit), 'Margin ' + PCT(k.profitMargin), k.netProfit >= 0 ? 'good' : 'bad'),
+    (() => { const np = npView(v); return kpi('Net Profit', np.value, np.ok ? 'Margin ' + np.margin : np.reason, np.tone); })(),
     kpi('Avg Order Value', AED(k.avgOrderValue), 'per order'),
   ].join('');
   // revenue vs expenses monthly: combine trend + expense per month (approx via expensesList)
@@ -737,9 +759,15 @@ function rGoogle() {
     `<div class="gf-stage"><div class="gf-bar" style="background:${fcolors[i]}22;border-color:${fcolors[i]}"><div class="gf-n">${NUM(s.count)}</div><div class="gf-l">${esc(s.label)}</div><div class="gf-p">${PCT(s.pct)} of orders</div></div>${i < g.funnel.length - 1 ? `<div class="gf-conv">${PCT(g.funnel[i + 1].conv || 0)}<i class="ti ti-chevron-down"></i></div>` : ''}</div>`).join('')
     || '<div class="empty">No Google Ads orders in this range</div>';
 
+  // req B: attribution-based labelling + completeness warning (untagged orders can't be split)
+  const attr = v.attribution || {};
+  const attrLine = attr.complete
+    ? `All ${NUM(attr.totalOrders)} orders carry a Lead Source tag — attribution is complete.`
+    : `<b>Attribution may be incomplete:</b> ${NUM(attr.untaggedOrders)} of ${NUM(attr.totalOrders)} orders have <b>no Lead Source tag</b> (${PCT(attr.taggedShare)} tagged). Untagged orders are <b>not</b> allocated to Google Ads or other sources — treat these figures as directional.`;
   const note = el('gNote'); note.hidden = false;
-  if (noSpend) { note.className = 'callout warn'; note.innerHTML = `<i class="ti ti-alert-triangle"></i> <b>No Google Ads spend recorded for this period.</b> ROAS & CPA need spend (from an Expenses "Google Ads" row). Revenue, orders & growth above are real — attributed from <b>Lead Source = "Google Ads"</b>.`; }
-  else { note.className = 'callout'; note.innerHTML = `<i class="ti ti-info-circle"></i> Attribution: <b>Lead Source = "Google Ads"</b> · spend from Expenses "Google Ads". Score = ROAS + CPA + conversion. ROAS ${g.roas.toFixed(2)}x · CPA ${AED(g.cpa)} · conversion ${PCT(g.conversionRate)}.`; }
+  const base = `<i class="ti ti-info-circle"></i> <b>Based on tagged Lead Source = "Google Ads"</b> (directional attribution). `;
+  if (noSpend) { note.className = 'callout warn'; note.innerHTML = base + `<b>No Google Ads spend recorded for this period</b> — ROAS &amp; CPA need an Expenses "Google Ads" row. Revenue &amp; orders above are real, attributed from tagged Lead Source. <br>${attrLine}`; }
+  else { note.className = 'callout' + (attr.complete ? '' : ' warn'); note.innerHTML = base + `Spend from Expenses "Google Ads"; score = ROAS + CPA + conversion. ROAS ${g.roas.toFixed(2)}x · CPA ${AED(g.cpa)} · conversion ${PCT(g.conversionRate)}. <br>${attrLine}`; }
 
   // Revenue vs Spend (monthly)
   const rt = g.roasTrend || [];
@@ -838,7 +866,7 @@ function rReports() {
     kpi('Collected', AED(k.paidRevenue), PCT(k.collectionRate)),
     kpi('Outstanding', AED(k.outstanding), NUM(k.pendingOrders) + ' owing'),
     kpi('Expenses', AED(k.totalExpenses), ''),
-    kpi('Net Profit', AED(k.netProfit), 'Margin ' + PCT(k.profitMargin)),
+    (() => { const np = npView(v); return kpi('Net Profit', np.value, np.ok ? 'Margin ' + np.margin : np.reason, np.tone); })(),
   ].join('');
   el('repTabs').innerHTML = REP_TABS.map(x => `<button class="rep-tab ${x.k === repTab ? 'active' : ''}" data-rt="${x.k}"><i class="ti ${x.ic}"></i> ${x.t}</button>`).join('');
   el('repTabs').querySelectorAll('[data-rt]').forEach(b => b.addEventListener('click', () => { repTab = b.dataset.rt; renderReport(); saveView(); }));
@@ -1025,7 +1053,7 @@ function trustVerdict() {
   return { level: 'bad', txt: 'NEEDS REVIEW', sub: 'Reconciliation gap or invalid dates detected — investigate failed validations' };
 }
 function rHealth() {
-  const d = state.data, m = d.meta, vd = d.validation, ss = m.sheetStatus || {};
+  const d = state.data, m = d.meta, v = d.view, vd = d.validation, ss = m.sheetStatus || {};
   const real = d.source === 'live' || d.source === 'file';
   const tv = trustVerdict();
   const ageMin = m.lastSync ? Math.round((Date.now() - new Date(m.lastSync).getTime()) / 60000) : null;
@@ -1086,6 +1114,8 @@ function rHealth() {
     ['All amounts present', (vd.missingAmounts || 0) === 0, true],
     ['All statuses on Settings list', (vd.brokenStatus || 0) === 0, true],
     ['Cancelled rows excluded from revenue', true],
+    ['Net Profit expense coverage for range', (v.profitCoverage || {}).reliable, true],
+    ['Google Ads attribution complete (all orders tagged)', (v.attribution || {}).complete, true],
   ];
   el('healthChecks').innerHTML = checks.map(([label, ok, soft]) => {
     const cls = ok ? 'good' : (soft ? 'warn' : 'bad');
@@ -1094,7 +1124,6 @@ function rHealth() {
   }).join('');
 
   // A · CRITICAL ISSUES
-  const v = d.view;
   const sevItem = (ic, t2, s2) => `<div class="sev-item"><i class="ti ${ic}"></i><div><div class="si-t">${esc(t2)}</div><div class="si-s">${esc(s2 || '')}</div></div></div>`;
   const critical = [];
   if (d.source === 'error') critical.push(['ti-plug-connected-x', 'Google Sheet not connected', ss.message]);
@@ -1111,6 +1140,9 @@ function rHealth() {
   if (vd.skipped.noDate) warnings.push(['ti-calendar-off', vd.skipped.noDate + ' rows without a date', 'excluded from time analysis']);
   if ((v.duplicates || []).length) warnings.push(['ti-copy', (v.duplicates || []).length + ' possible duplicate records', 'see Audit Log → Duplicate Detection']);
   if (v.diag && v.diag.isEmpty) warnings.push(['ti-calendar-off', 'Selected range has no transactions', 'latest data ' + m.maxDate]);
+  const _attr = v.attribution || {}, _pc = v.profitCoverage || {};
+  if (!_attr.complete && _attr.untaggedOrders) warnings.push(['ti-tag-off', NUM(_attr.untaggedOrders) + ' orders have no Lead Source tag', 'Google Ads attribution is directional (' + PCT(_attr.taggedShare) + ' of orders tagged) — untagged orders are not allocated']);
+  if (!_pc.reliable) warnings.push(['ti-receipt-off', 'Net Profit shown as “—” for this range', _pc.reason || 'Insufficient/partial expense coverage — pick a whole-month or All-Time range']);
   el('healthWarnings').innerHTML = warnings.length ? warnings.map(c => sevItem(c[0], c[1], c[2])).join('') : '<div class="empty" style="color:var(--green)">✓ No warnings</div>';
 
   // D · SYNC EVENTS
