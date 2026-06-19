@@ -23,18 +23,8 @@ function methodColor(name) {
   if (s.includes('bank')) return C.blue;
   if (s.includes('link')) return C.green;
   if (s.includes('cash')) return C.orange;
-  if (s.includes('card')) return C.teal;
-  if (s.includes('tabby')) return '#9B7BFF';
-  if (s.includes('tamara')) return '#EC6FA8';
-  if (s.includes('cheque') || s.includes('check')) return C.gold || '#E6B84A';
-  if (s.includes('diamond')) return '#A78BFA';                 // Diamond collection point
-  if (s.includes('boston')) return '#F472B6';                  // Boston collection point
-  return '#8A97B5'; // Other/Others = gray
+  return '#8A97B5'; // Other = gray
 }
-// Display-normalise the duplicate "Other"/"Others" to one canonical label (sheet config uses "Others").
-function methodLabel(name) { return /^others?$/i.test(String(name || '').trim()) ? 'Others' : name; }
-// Sort any "Other"/"Others" category to the END of legends/charts (never between named categories).
-function othersLast(arr) { return arr.slice().sort((a, b) => (/^others?$/i.test(a.name) ? 1 : 0) - (/^others?$/i.test(b.name) ? 1 : 0)); }
 // fixed service-type color mapping (req #3): Legal=Blue, MOFA=Green, Embassy=Violet, MOJ=Teal; others = lighter secondaries (no strong pink for majors)
 const SERVICE_SECONDARY = ['#9B7BFF', '#22B8C9', '#E6B84A', '#5B8DEF', '#7FB069', '#C792EA', '#94A3B8'];
 function serviceColor(name, i) {
@@ -146,7 +136,6 @@ setInterval(tickClock, 1000); tickClock();
 
 /* ---------- navigation ---------- */
 function go(page) {
-  if (page === 'operations') page = 'pipeline';   // Operations merged into Pipeline & Operations
   state.page = page;
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
   document.querySelectorAll('[data-page]').forEach(a => a.classList.toggle('active', a.dataset.page === page));
@@ -159,23 +148,6 @@ document.querySelectorAll('[data-page]').forEach(a => a.addEventListener('click'
 el('ham').addEventListener('click', () => el('sidebar').classList.toggle('open'));
 // tap the backdrop (mobile/portrait drawer) to close the sidebar
 el('sbBackdrop').addEventListener('click', () => el('sidebar').classList.remove('open'));
-// Operational Tools (Pipeline & Operations): Sync + Export shortcuts, wired by class
-document.querySelectorAll('.js-op-sync').forEach(b => b.addEventListener('click', () => { try { logEvent('info', 'Operations · Sync', 'Manual refresh'); } catch (e) {} load(true, true); }));
-document.querySelectorAll('.js-op-export').forEach(b => b.addEventListener('click', () => { const f = (state.data && state.data.view && state.data.view.filter) || {}; window.open('/api/export?from=' + encodeURIComponent(f.from || '') + '&to=' + encodeURIComponent(f.to || '') + '&service=' + encodeURIComponent(f.service || 'All') + '&lead=' + encodeURIComponent(f.lead || 'All'), '_blank'); }));
-// iPad/touch tap tooltip for the sidebar Revenue/Expenses bars (not :hover-only).
-// Tooltip is appended to <body> (fixed) so the sidebar's overflow never clips it.
-document.addEventListener('click', e => {
-  const bar = e.target.closest('.eb-bar');
-  let tip = document.getElementById('__bartip');
-  if (bar && bar.dataset.tip) {
-    if (!tip) { tip = document.createElement('div'); tip.id = '__bartip'; tip.className = 'bartip'; document.body.appendChild(tip); }
-    tip.textContent = bar.dataset.tip; tip.style.display = 'block';
-    const r = bar.getBoundingClientRect();
-    tip.style.left = Math.max(6, Math.min(r.left + r.width / 2 - tip.offsetWidth / 2, window.innerWidth - tip.offsetWidth - 6)) + 'px';
-    tip.style.top = Math.max(6, r.top - tip.offsetHeight - 8) + 'px';
-    e.stopPropagation();
-  } else if (tip) { tip.style.display = 'none'; }
-});
 el('refreshBtn').addEventListener('click', () => { logEvent('info', 'Refresh clicked', 'Manual data refresh requested'); load(true, true); });
 
 /* ---------- date presets ---------- */
@@ -292,23 +264,24 @@ function renderChrome() {
     el('errorOpenSheet').href = m.spreadsheetUrl || '#';
   }
   el('rangeLabel').textContent = computeRange(state.filter.range).label + (v.filter.service !== 'All' ? ' · ' + v.filter.service : '') + (v.filter.lead !== 'All' ? ' · ' + v.filter.lead : '');
-  // sidebar Net Profit card — clean two-bar mini chart (Revenue vs Expenses, all-time, real values).
-  // No big numbers in the tiny card; AED values show on hover/tap via title tooltip.
-  // follows the active filter (live) — values + period badge update with the Money filter
-  const at = v.kpis;
-  const apc = v.profitCoverage || {};
-  const _badge = { all: 'All time', today: 'Today', yesterday: 'Yesterday', '7': 'Last 7 days', '30': 'Last 30 days', month: 'This month', lastmonth: 'Last month' }[state.filter.range] || 'Custom';
-  if (el('execTag')) el('execTag').textContent = _badge;
-  if (el('execProfit')) {
-    el('execProfit').textContent = apc.reliable ? AED(at.netProfit) : '—';
-    el('execProfit').style.color = apc.reliable ? (at.netProfit >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--muted)';
+  // sidebar Net Profit summary (all-time, clear)
+  const at = d.allTime.kpis;
+  const apc = d.allTime.profitCoverage || {};
+  if (apc.reliable) {
+    el('execProfit').textContent = AED(at.netProfit);
+    el('execProfit').style.color = at.netProfit >= 0 ? 'var(--green)' : 'var(--red)';
+    el('execMargin').textContent = PCT(at.profitMargin);
+  } else {
+    el('execProfit').textContent = '—';
+    el('execProfit').style.color = 'var(--muted)';
+    el('execMargin').textContent = 'n/a';
   }
-  if (el('execMargin')) el('execMargin').textContent = apc.reliable ? PCT(at.profitMargin) : 'n/a';
-  const rev = Math.max(0, at.totalRevenue || 0), exp = Math.max(0, at.totalExpenses || 0);
-  const maxV = Math.max(rev, exp, 1);
-  const revBar = el('execRevBar'), expBar = el('execExpBar');
-  if (revBar) { revBar.style.height = Math.max(4, Math.round(rev / maxV * 100)) + '%'; revBar.title = revBar.dataset.tip = 'Revenue: ' + AED(rev); }
-  if (expBar) { expBar.style.height = Math.max(4, Math.round(exp / maxV * 100)) + '%'; expBar.title = expBar.dataset.tip = 'Expenses: ' + AED(exp); }
+  const ec = el('execProfit').closest('.exec-card'); if (ec) ec.title = apc.reliable ? NP_TIP : (NP_TIP + ' (' + (apc.reason || 'insufficient expense data') + ')');
+  // req #10: compact amounts (AED 53.9K) + visual mini-bars instead of long numbers in tiny boxes
+  el('execRev').textContent = AEDk(at.totalRevenue);
+  el('execExp').textContent = AEDk(at.totalExpenses);
+  if (el('execRevSpark')) el('execRevSpark').innerHTML = miniBars((d.allTime.revenueTrend || []).map(r => r.revenue), C.green);
+  if (el('execExpSpark')) el('execExpSpark').innerHTML = miniBars((d.allTime.expenseTrend || []).map(r => r.expense), C.red);
 
   // audit badge mirrors real validation warning count
   const warn = (d.validation && (d.validation.missingAmounts + d.validation.brokenStatus + (d.validation.reconciles ? 0 : 1))) || 0;
@@ -334,9 +307,7 @@ function renderChrome() {
   const services = mergeU(st.serviceTypes, m.options.services);
   // req #2/#9: lead dropdown from the Settings master only (unknown sources like "Direct" are
   // never offered as a filterable option — they are logged in Settings Protection instead).
-  // Use the canonical Settings list (matches aliasLead output) so the filter values actually match
-  // the records — incl. "Google Ads Returning". Avoids stale raw labels (Client/Referral/etc.).
-  const leadsList = ((m.options && m.options.leads && m.options.leads.length) ? m.options.leads.slice() : ['Google Ads', 'Google Ads Returning', 'Our Client', 'New', 'Walk-in Client', 'Other']).map(n => n === 'New' ? 'New Client' : n);
+  const leadsList = (st.leadSources && st.leadSources.length) ? st.leadSources.slice() : ['Google Ads', 'Our Client', 'New', 'Walk-in Client', 'Other'];
   const optSig = services.join('|') + '##' + leadsList.join('|');
   if (el('fService').dataset.sig !== optSig && (services.length || leadsList.length)) {
     const curS = el('fService').value || v.filter.service, curL = el('fLead').value || v.filter.lead;
@@ -363,33 +334,8 @@ function renderChrome() {
 }
 
 function renderPage(page) {
-  ({ overview: rOverview, money: rMoney, collection: rCollection, pipeline: () => { rPipeline(); rOps(); }, operations: () => { rPipeline(); rOps(); }, clients: rClients, google: rGoogle, leads: rLeads, reports: rReports, audit: rAudit, health: rHealth, settings: rSettings }[page] || (() => {}))();
-  balanceKpiRows();
+  ({ overview: rOverview, money: rMoney, collection: rCollection, pipeline: rPipeline, operations: rOps, clients: rClients, google: rGoogle, reports: rReports, audit: rAudit, health: rHealth, settings: rSettings }[page] || (() => {}))();
 }
-// Balanced KPI rows: choose a column count from BOTH the card count and the viewport width,
-// picking a divisor that never leaves one card alone on a row. e.g. 4 -> 4 or 2+2 (never 3+1),
-// 6 -> 6/3+3/2+2+2, 5 -> 5 or 3+2, 15 -> 5+5+5. Re-runs on resize.
-function bestCols(n, cap) {
-  if (n <= cap) return n;                 // everything fits in one row
-  let best = cap, score = Infinity;
-  for (let c = cap; c >= 2; c--) {
-    const rem = n % c;
-    const s = (rem === 1 ? 1000 : 0)       // a lone trailing card is the worst outcome
-            + (rem === 0 ? 0 : (c - rem));  // otherwise prefer the smallest empty tail
-    if (s < score) { score = s; best = c; }
-  }
-  return best;
-}
-function balanceKpiRows() {
-  const w = window.innerWidth;
-  const cap = w >= 1200 ? 6 : w >= 760 ? 3 : w >= 460 ? 2 : 1;   // max columns the width affords
-  document.querySelectorAll('.page.active .kpi-strip, .page.active .hero, .page.active .today-cells').forEach(g => {
-    const n = g.children.length; if (!n) return;
-    g.style.setProperty('--cols', bestCols(n, cap));
-  });
-}
-let _kpiRaf;
-window.addEventListener('resize', () => { clearTimeout(_kpiRaf); _kpiRaf = setTimeout(balanceKpiRows, 120); });
 
 /* Net Profit display guardrail (req A) — shows a confident figure only when expense coverage
    is reliable (whole-month/All-Time ranges with expense data); otherwise "—" + reason.
@@ -433,19 +379,6 @@ function rOverview() {
     tcell('ti-brand-google', 'ic-purple', 'GOOGLE REV', AED(rs.googleRevenue)),
   ].join('');
 
-  // What happened — latest transactions, top clients, Google snapshot (REAL records only)
-  el('ovLatest').innerHTML = table(['Date', 'Client', 'Service', 'Amount', 'Payment', 'Delivery'],
-    (v.recentTransactions || []).slice(0, 10).map(o => [esc(o.date), esc(o.client || '—'), esc(o.service), AED(o.amount), badge(o.status), badge(o.delivery)]));
-  el('ovTopClients').innerHTML = table(['Client', 'Revenue', 'Orders'],
-    (v.topClients || []).slice(0, 5).map(c => [esc(c.client || '—'), AED(c.revenue), NUM(c.orders)]));
-  const _attr = v.attribution || {};
-  el('ovGoogleSnap').innerHTML = [
-    ['Google Ads revenue', AED(rs.googleRevenue)],
-    ['Google Ads orders', NUM(rs.googleOrders)],
-    ['New clients (range)', NUM(rs.newClients)],
-    ['Attribution tagged', PCT(_attr.taggedShare)],
-  ].map(([l, vv]) => `<div class="hr"><span class="hr-l">${l}</span><span class="hr-v mono">${vv}</span></div>`).join('');
-
   draw('ovTrend', { type: 'line', data: { labels: v.revenueTrend.map(r => r.label), datasets: [{ data: monthly, borderColor: C.blue, backgroundColor: 'rgba(59,130,246,.16)', fill: true, tension: .4, borderWidth: 3, pointRadius: 3, pointBackgroundColor: C.blue }] }, options: axis(true) });
   const pay = v.paymentSummary.filter(p => p.amount > 0);
   const payColor = { 'Paid': C.green, 'Outstanding': C.red, 'Cancelled (excluded)': '#9CA3AF' };
@@ -453,14 +386,12 @@ function rOverview() {
   const rec = v.reconciliation;
   el('ovReconcile').className = 'reconcile ' + (rec.reconciles ? 'ok' : 'bad');
   el('ovReconcile').textContent = rec.reconciles ? `✓ Paid + Outstanding = ${AEDk(rec.paidPlusOutstanding)} = Total` : `⚠ Mismatch ${AEDk(rec.paidPlusOutstanding)} vs ${AEDk(rec.total)}`;
-  const leads = othersLast(v.leadSources.slice(0, 6));
+  const leads = v.leadSources.slice(0, 6);
   draw('ovLead', { type: 'doughnut', data: { labels: leads.map(l => l.name), datasets: [{ data: leads.map(l => l.revenue), backgroundColor: leads.map(l => leadColor(l.name)), borderWidth: 0 }] }, options: doughnut() });
-  // SERVICE TYPE / ATTESTATION REVENUE — donut from live Service Type data
-  const ovsvc = othersLast((v.topServices || []).slice(0, 6).map(s => ({ name: s.name, value: s.revenue })));
-  draw('ovSvc', { type: 'doughnut', data: { labels: ovsvc.map(s => s.name), datasets: [{ data: ovsvc.map(s => s.value), backgroundColor: ovsvc.map((s, i) => serviceColor(s.name, i)), borderWidth: 0 }] }, options: Object.assign(doughnut(), { plugins: { legend: { position: 'right', labels: { color: C.muted, font: { size: 11 }, boxWidth: 11, padding: 8 } }, tooltip: { callbacks: { label: c => c.label + ': ' + AED(c.parsed) } } } }) });
+  el('ovSvc').innerHTML = bars(v.topServices.slice(0, 6).map(s => ({ name: s.name, value: s.revenue })), null, i => PCT(k.totalRevenue ? i.value / k.totalRevenue * 100 : 0));
   // PAYMENT METHODS (req #2) — fixed colors, on Overview upper chart area
-  const ovpm = othersLast((v.paymentMethods || []).filter(p => p.value > 0));
-  draw('ovMethods', { type: 'doughnut', data: { labels: ovpm.map(p => methodLabel(p.name)), datasets: [{ data: ovpm.map(p => p.value), backgroundColor: ovpm.map(p => methodColor(p.name)), borderWidth: 0 }] }, options: doughnut() });
+  const ovpm = (v.paymentMethods || []).filter(p => p.value > 0);
+  draw('ovMethods', { type: 'doughnut', data: { labels: ovpm.map(p => p.name), datasets: [{ data: ovpm.map(p => p.value), backgroundColor: ovpm.map(p => methodColor(p.name)), borderWidth: 0 }] }, options: doughnut() });
 
   const margin = k.profitMargin, coll = k.collectionRate;
   el('ovHealth').innerHTML = [
@@ -695,24 +626,16 @@ function rMoney() {
     (() => { const np = npView(v); return kpi('Net Profit', np.value, np.ok ? 'Margin ' + np.margin : np.reason, np.tone); })(),
     kpi('Avg Order Value', AED(k.avgOrderValue), 'per order'),
   ].join('');
-  // Section B — Collections vs Outstanding + cash-flow summary (real KPI values, no fabrication)
-  const _rev = k.totalRevenue || 0, _paid = k.paidRevenue || 0, _out = k.outstanding || 0;
-  const _np = npView(v);
-  const _pct = n => _rev > 0 ? (n / _rev * 100) : 0;
-  el('moCashflow').innerHTML =
-    `<div class="cf-bar">${_paid > 0 ? `<div class="cf-seg paid" style="width:${_pct(_paid)}%" title="Collected: ${AED(_paid)}"></div>` : ''}${_out > 0 ? `<div class="cf-seg out" style="width:${_pct(_out)}%" title="Outstanding: ${AED(_out)}"></div>` : ''}</div>
-     <div class="cf-legend"><span><i class="cf-dot paid"></i>Collected ${AED(_paid)} · ${PCT(_pct(_paid))}</span><span><i class="cf-dot out"></i>Outstanding ${AED(_out)} · ${PCT(_pct(_out))}</span></div>` +
-    [['Total Revenue', AED(_rev)], ['Collected', AED(_paid)], ['Outstanding', AED(_out)], ['Expenses', AED(k.totalExpenses)], ['Net Profit', _np.ok ? _np.value : '—']]
-      .map(([l, vv]) => `<div class="hr"><span class="hr-l">${l}</span><span class="hr-v mono">${vv}</span></div>`).join('');
-  // D — Lead Source Revenue (display labels corrected to the Settings master names)
-  const leadName = n => n === 'New' ? 'New Client' : n;
-  const _ls = othersLast(v.leadSources || []);
-  draw('moLead', { type: 'doughnut', data: { labels: _ls.map(l => leadName(l.name)), datasets: [{ data: _ls.map(l => l.revenue), backgroundColor: _ls.map(l => leadColor(l.name)), borderWidth: 0 }] }, options: Object.assign(doughnut(), { plugins: { legend: { position: 'right', labels: { color: C.muted, font: { size: 11 }, boxWidth: 11, padding: 8 } }, tooltip: { callbacks: { label: c => c.label + ': ' + AED(c.parsed) } } } }) });
-  // E — Service Type Revenue (real Service Type column)
-  el('moService').innerHTML = bars(v.topServices.slice(0, 6).map(s => ({ name: s.name, value: s.revenue })), null, i => AED(i.value));
+  // revenue vs expenses monthly: combine trend + expense per month (approx via expensesList)
+  const expByMonth = {}; (v.expensesList || []).forEach(e => { const mk = (e.date || '').slice(0, 7); if (mk) expByMonth[mk] = (expByMonth[mk] || 0) + e.amount; });
+  const labels = v.revenueTrend.map(r => r.label), keys = v.revenueTrend.map(r => r.key);
+  draw('moTrend', { type: 'bar', data: { labels, datasets: [
+    { label: 'Revenue', data: v.revenueTrend.map(r => r.revenue), backgroundColor: C.accent, borderRadius: 4 },
+    { label: 'Expenses', data: keys.map(kk => Math.round(expByMonth[kk] || 0)), backgroundColor: C.red, borderRadius: 4 },
+  ] }, options: Object.assign(axis(true), { plugins: { legend: { display: true, labels: { color: C.muted, boxWidth: 11 } } } }) });
   draw('moDaily', { type: 'bar', data: { labels: v.dailyTrend.map(r => r.label), datasets: [{ data: v.dailyTrend.map(r => r.revenue), backgroundColor: C.blue, borderRadius: 3 }] }, options: axis(true) });
-  const pm = othersLast(v.paymentMethods.slice(0, 7));
-  draw('moMethods', { type: 'doughnut', data: { labels: pm.map(p => methodLabel(p.name)), datasets: [{ data: pm.map(p => p.value), backgroundColor: pm.map(p => methodColor(p.name)), borderWidth: 0 }] }, options: doughnut() });
+  const pm = v.paymentMethods.slice(0, 7);
+  draw('moMethods', { type: 'doughnut', data: { labels: pm.map(p => p.name), datasets: [{ data: pm.map(p => p.value), backgroundColor: pm.map(p => methodColor(p.name)), borderWidth: 0 }] }, options: doughnut() });
   el('moExpenses').innerHTML = table(['Date', 'Category', 'Status', 'Amount'], (v.expensesList || []).slice(0, 20).map(e => [esc(e.date || '—'), esc(e.category), badge((e.status || '').toLowerCase() || 'pending'), AED(e.amount)]));
   el('moTopClients').innerHTML = table(['Client', 'Revenue', 'Paid', 'Orders'], v.topClients.slice(0, 10).map(c => [esc(c.client), AED(c.revenue), AED(c.paid), NUM(c.orders)]));
   const ageing = v.outstandingOrders.slice(0, 12);
@@ -774,21 +697,8 @@ function rOps() {
     kpi('Services Active', NUM(v.topServices.length), 'distinct types'),
     kpi('Cancelled', NUM(k.cancelledOrders), 'excluded from revenue'),
   ].join('');
-  // Horizontal bars: Y = service names (category), X = order count. Truncate long names (full name in tooltip);
-  // minBarLength keeps small-count bars visible without changing the real value.
-  draw('opsService', { type: 'bar', data: { labels: v.topServices.map(s => s.name), datasets: [{ data: v.topServices.map(s => s.orders), backgroundColor: C.teal, borderRadius: 4, minBarLength: 6 }] }, options: {
-    responsive: true, maintainAspectRatio: false, indexAxis: 'y',
-    plugins: { legend: { display: false }, tooltip: { callbacks: { title: items => items[0] ? items[0].label : '', label: c => NUM(c.parsed.x) + ' orders' } } },
-    scales: {
-      x: { beginAtZero: true, ticks: { color: C.muted, font: { size: 10 }, precision: 0 }, grid: { color: gridc() } },
-      y: { ticks: { color: C.muted, font: { size: 11 }, callback: function (val) { const l = this.getLabelForValue(val); return l && l.length > 16 ? l.slice(0, 15) + '…' : l; } }, grid: { display: false } }
-    }
-  } });
-  // Delivery Performance — compact panel: status dot + label + progress bar + count + %
-  const dCls = n => /deliver|done/i.test(n) ? 'good' : /progress/i.test(n) ? 'info' : /pending/i.test(n) ? 'warn' : 'neutral';
-  el('opsDelivery').innerHTML = db.map(x => { const p = totalD ? x.count / totalD * 100 : 0; const c = dCls(x.name);
-    return `<div class="dperf-row"><span class="dot ${c}"></span><span class="dperf-l">${esc(x.name)}</span><div class="dperf-track"><div class="dperf-fill ${c}" style="width:${Math.max(2, p)}%"></div></div><span class="dperf-c mono">${NUM(x.count)}</span><span class="dperf-p mono">${PCT(p)}</span></div>`;
-  }).join('') + `<div class="dperf-foot">Delivery completion: <b>${PCT(delivered / totalD * 100)}</b></div>`;
+  draw('opsService', { type: 'bar', data: { labels: v.topServices.map(s => s.name), datasets: [{ data: v.topServices.map(s => s.orders), backgroundColor: C.teal, borderRadius: 4 }] }, options: Object.assign(axis(false), { indexAxis: 'y' }) });
+  el('opsDelivery').innerHTML = bars(db.map(x => ({ name: x.name, value: x.count })), totalD, i => NUM(i.value) + ' · ' + PCT(i.value / totalD * 100));
   el('opsPending').innerHTML = table(['Date', 'Client', 'Service', 'Amount', 'Delivery'], v.pendingDeliveries.map(o => [esc(o.date), esc(o.client || '—'), esc(o.service), AED(o.amount), badge(o.delivery)]));
 }
 
@@ -821,18 +731,25 @@ function rGoogle() {
 
   // executive score gauge
   const scoreTone = g.score >= 70 ? 'good' : g.score >= 45 ? 'warn' : 'bad';
-  el('gScore').innerHTML = `<div class="score-ring ${scoreTone}" style="--pct:${Math.max(0, Math.min(100, g.score || 0))}"><span class="score-inner"><span class="score-n">${NUM(g.score || 0)}</span><span class="score-x">/100</span></span></div><div class="score-lbl">Google Ads<br>Executive Score</div>`;
+  el('gScore').innerHTML = `<div class="score-ring ${scoreTone}"><span class="score-n">${NUM(g.score || 0)}</span><span class="score-x">/100</span></div><div class="score-lbl">Google Ads<br>Executive Score</div>`;
 
   // KPIs (full set, req #8)
-  const _attr0 = v.attribution || {};
-  const fcount = lbl => ((g.funnel || []).find(s => s.label === lbl) || {}).count || 0;
   const cards = [
     kpi('Google Ads Revenue', AED(g.revenue), PCT(g.revenueShare) + ' of total revenue'),
     kpi('Google Ads Orders', NUM(g.orders), 'attributed orders'),
-    kpi('Google Ads Clients', NUM((g.newClients || 0) + (g.returningClients || 0)), NUM(g.newClients) + ' new · ' + NUM(g.returningClients) + ' returning'),
-    kpi('Paid Orders', NUM(fcount('Paid Orders')), PCT(g.conversionRate) + ' conversion', g.conversionRate >= 70 ? 'good' : 'warn'),
-    kpi('Delivered Orders', NUM(fcount('Delivered Orders')), 'fulfilled'),
-    kpi('Attribution Coverage', PCT(_attr0.taggedShare), _attr0.complete ? 'all orders tagged' : NUM(_attr0.untaggedOrders) + ' untagged', _attr0.complete ? 'good' : 'warn'),
+    kpi('Ad Spend', AED(g.spend), noSpend ? 'none this period' : 'from Expenses', noSpend ? 'warn' : ''),
+    kpi('ROAS', g.roas == null ? 'N/A' : g.roas.toFixed(2) + 'x', g.roas == null ? 'needs spend' : 'revenue / spend', g.roas == null ? 'neutral' : g.roas >= 2 ? 'good' : 'warn'),
+    kpi('CPA', g.cpa == null ? 'N/A' : AED(g.cpa), g.cpa == null ? 'needs spend' : 'cost / order'),
+    kpi('Net / Profit After Ads', AED(g.profitAfterAdSpend), 'revenue − spend', g.profitAfterAdSpend >= 0 ? 'good' : 'bad'),
+    kpi('Avg Order Value', AED(g.aov), 'per Google order'),
+    kpi('Conversion Rate', PCT(g.conversionRate), 'orders paid', g.conversionRate >= 70 ? 'good' : 'warn'),
+    kpi('Revenue Growth', cmp.hasPrev && cmp.revenue != null ? (cmp.revenue >= 0 ? '+' : '') + PCT(cmp.revenue) : 'N/A', 'vs previous period', !cmp.hasPrev ? 'neutral' : cmp.revenue >= 0 ? 'good' : 'bad'),
+    kpi('Orders Growth', cmp.hasPrev && cmp.orders != null ? (cmp.orders >= 0 ? '+' : '') + PCT(cmp.orders) : 'N/A', 'vs previous period', !cmp.hasPrev ? 'neutral' : cmp.orders >= 0 ? 'good' : 'bad'),
+    kpi('Best Revenue Day', g.bestDays && g.bestDays[0] ? AEDk(g.bestDays[0].revenue) : '—', g.bestDays && g.bestDays[0] ? g.bestDays[0].date : ''),
+    kpi('Google Revenue Share', PCT(g.revenueShare), 'of all revenue'),
+    kpi('New Google Clients', NUM(g.newClients), AED(g.newRevenue) + ' · ' + NUM(g.newOrders) + ' orders', 'good'),
+    kpi('Returning Google Clients', NUM(g.returningClients), AED(g.returningRevenue) + ' · ' + NUM(g.returningOrders) + ' orders', g.returningClients ? 'good' : 'neutral'),
+    kpi('Returning Revenue Ratio', PCT(g.returningRevenueRatio), 'of Google Ads revenue', g.returningRevenueRatio >= 20 ? 'good' : ''),
   ];
   el('gKpis').innerHTML = cards.join('');
 
@@ -941,71 +858,6 @@ const REP_TABS = [
   { k: 'google', t: 'Google Ads', ic: 'ti-brand-google' },
   { k: 'clients', t: 'Client Report', ic: 'ti-users' },
 ];
-// Edit Report — read-only source/sync status + a safe localStorage before/after snapshot.
-// No fabricated history: row-level changes live in the Audit Log; here we show current detected
-// source status + the diff vs the last stored dashboard snapshot.
-function renderEditReport(v, k) {
-  const el2 = document.getElementById('repStatus'); if (!el2) return;
-  const m = state.data.meta || {}; const attr = v.attribution || {};
-  const fmtT = t => { if (!t) return 'Unavailable'; try { return new Date(t).toLocaleString('en-GB', { timeZone: 'Asia/Dubai', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }); } catch (e) { return 'Unavailable'; } };
-  const bdg = (txt, cls) => `<span class="rc-badge ${cls}">${txt}</span>`;
-  const connected = state.data.source === 'live';
-  const statusRows = [
-    ['Sheet connection', connected ? bdg('Connected', 'ok') : bdg('Not connected', 'bad')],
-    ['Last sync', fmtT(m.lastSync || m.fetchedAt)],
-    ['Rows loaded', m.totalRecords != null ? NUM(m.totalRecords) : 'Unavailable'],
-    ['Latest transaction', m.maxDate || 'Unavailable'],
-    ['Selected range', (v.filter.from || '—') + ' → ' + (v.filter.to || '—')],
-    ['Untagged orders', attr.untaggedOrders != null ? (attr.untaggedOrders ? bdg(NUM(attr.untaggedOrders) + ' untagged', 'warn') : bdg('All tagged', 'ok')) : 'Unavailable'],
-    ['Attribution coverage', attr.taggedShare != null ? PCT(attr.taggedShare) : 'Unavailable'],
-  ];
-  // before/after snapshot (localStorage) — real values only
-  const cur = { rev: k.totalRevenue, paid: k.paidRevenue, out: k.outstanding, np: (npView(v).ok ? k.netProfit : null), ord: k.totalOrders };
-  let prev = null; try { prev = JSON.parse(localStorage.getItem('ats-snap') || 'null'); } catch (e) {}
-  let changeHtml;
-  if (!prev) {
-    changeHtml = `<div class="rc-empty">No previous snapshot stored yet. Changes will appear here after the next sync.</div>`;
-  } else {
-    const diffRow = (label, a, b, money) => {
-      if (a == null || b == null) return `<div class="rc-row"><span>${label}</span><span class="rc-na">—</span></div>`;
-      const d = b - a; const fmt = money ? AED : NUM;
-      const dir = d > 0 ? bdg('▲ ' + fmt(Math.abs(d)), 'ok') : d < 0 ? bdg('▼ ' + fmt(Math.abs(d)), 'warn') : bdg('No change', 'info');
-      return `<div class="rc-row"><span>${label}</span><span class="mono rc-vals">${fmt(a)} → ${fmt(b)}</span>${dir}</div>`;
-    };
-    changeHtml = diffRow('Total Revenue', prev.rev, cur.rev, true) + diffRow('Collected', prev.paid, cur.paid, true) + diffRow('Outstanding', prev.out, cur.out, true) + diffRow('Net Profit', prev.np, cur.np, true) + diffRow('Orders', prev.ord, cur.ord, false);
-  }
-  try { localStorage.setItem('ats-snap', JSON.stringify(cur)); } catch (e) {}
-  el2.innerHTML =
-    `<div class="rc-grid">
-       <div><div class="rc-sub">Source &amp; sync status</div>${statusRows.map(([l, vv]) => `<div class="rc-row"><span>${l}</span><span>${vv}</span></div>`).join('')}</div>
-       <div><div class="rc-sub">Recent changes <span class="dimv small">— vs last snapshot</span></div>${changeHtml}</div>
-     </div>
-     <div class="rc-note"><i class="ti ti-info-circle"></i> Row-level Google Sheet change history (who/what/before→after) is in the <b>Audit Log</b>. Change-type filters &amp; report exports are ${bdg('Coming soon', 'soon')}.</div>`;
-}
-// Google Ads Leads Review (Rowan Daily Report) — read-only, separate from financial data.
-let _rowan = null, _rowanFetched = false;
-function rLeads() {
-  const box = document.getElementById('leadsBody'); if (!box) return;
-  if (!_rowanFetched) {
-    _rowanFetched = true;
-    box.innerHTML = '<div class="card"><div class="empty">Loading Rowan Daily Report…</div></div>';
-    fetch('/api/rowan', { cache: 'no-store' }).then(r => r.json()).then(j => { _rowan = j; rLeads(); }).catch(() => { _rowan = { connected: false, reason: 'source unreachable' }; rLeads(); });
-    return;
-  }
-  if (!_rowan || !_rowan.connected) {
-    box.innerHTML = `<div class="card"><div class="rl-nc"><i class="ti ti-plug-connected-x"></i><div><div class="rl-nc-t">Rowan Daily Report — Not connected</div><div class="rl-nc-s">${esc((_rowan && _rowan.reason) || 'No Rowan source configured')}.</div></div></div>
-      <div class="set-help" style="margin-top:14px">Once the Rowan sheet is connected, this page will show — using <b>lead data only</b> (never counted as revenue):</div>
-      <ul class="rl-list">
-        <li>Lead summary cards: total Google/WhatsApp leads, matched/converted, Rowan-only, cancelled, no-response, price-issue, pending, unknown.</li>
-        <li>Reconciliation vs Main Transactions by <b>Reference/ATS №</b>, then <b>Phone</b>, then Name+Date.</li>
-        <li>Searchable review table (Date · Client · Phone · Service · Amount · Payment · File · Payment Method · Lead Source · Lead Outcome · Matched · Source Status · Ref № · Notes) with filters.</li>
-        <li>Market insight: lost-lead reasons, best-converting sources, payment-place usage (Cash / Bank Transfer / Payment Link / Cheque / Others / Diamond / Boston).</li>
-      </ul></div>`;
-    return;
-  }
-  // Connected: minimal honest view until the column mapping/matching is verified against the live sheet.
-  box.innerHTML = `<div class="card"><div class="rc-row"><span>Rowan source</span><span class="rc-badge ok">Connected</span></div><div class="rc-row"><span>Fetched</span><span class="mono">${esc(_rowan.fetchedAt || '')}</span></div><div class="rc-note"><i class="ti ti-info-circle"></i> Source connected. Full lead reconciliation table &amp; insights will render once the column mapping is confirmed against the live sheet.</div></div>`;
-}
 function rReports() {
   const v = state.data.view, k = v.kpis;
   el('repKpis').innerHTML = [
@@ -1016,7 +868,6 @@ function rReports() {
     kpi('Expenses', AED(k.totalExpenses), ''),
     (() => { const np = npView(v); return kpi('Net Profit', np.value, np.ok ? 'Margin ' + np.margin : np.reason, np.tone); })(),
   ].join('');
-  renderEditReport(v, k);
   el('repTabs').innerHTML = REP_TABS.map(x => `<button class="rep-tab ${x.k === repTab ? 'active' : ''}" data-rt="${x.k}"><i class="ti ${x.ic}"></i> ${x.t}</button>`).join('');
   el('repTabs').querySelectorAll('[data-rt]').forEach(b => b.addEventListener('click', () => { repTab = b.dataset.rt; renderReport(); saveView(); }));
   renderReport();
@@ -1348,24 +1199,17 @@ function renderSettingsPrefs() {
   set('prefLanding', p.landing); set('prefRange', p.range); set('prefRemember', p.remember);
   set('prefDensity', p.density); set('prefNotif', p.notif);
   set('prefTheme', document.body.classList.contains('light') ? 'light' : 'dark');
-  const sw = (name, color) => `<div class="swatch" title="${esc(name)}"><span class="sw-chip" style="background:${color}"></span><span class="sw-n">${esc(name)}</span><span class="sw-hex mono">${color}</span><button class="sw-edit" disabled title="Editing coming soon">Edit</button></div>`;
-  const opt = (state.data && state.data.meta && state.data.meta.options) || {};
-  const statusColor = n => { const s = String(n).toLowerCase(); if (/paid|delivered|done/.test(s)) return C.green; if (/outstanding|pending/.test(s)) return C.orange; if (/partial|progress/.test(s)) return C.blue; if (/cancel/.test(s)) return '#9CA3AF'; return C.muted; };
+  const sw = (name, color) => `<div class="swatch"><span class="sw-chip" style="background:${color}"></span><span class="sw-n">${esc(name)}</span><span class="sw-hex mono">${color}</span></div>`;
   const st = (state.data && state.data.view.settings) || {};
-  // lead source colors — canonical Settings list (matches charts + filter); display "New" as "New Client"
-  const leadDisp = n => n === 'New' ? 'New Client' : n;
-  const _leadOpts = (state.data && state.data.meta && state.data.meta.options && state.data.meta.options.leads) || [];
-  const leads = _leadOpts.length ? _leadOpts : ['Google Ads', 'Google Ads Returning', 'Our Client', 'New', 'Walk-in Client', 'Other'];
-  el('setLeadColors').innerHTML = leads.map(n => sw(leadDisp(n), leadColor(n))).join('');
-  // payment method colors — official Settings master (clean: no Courier Charge, single Other/Others)
-  const methods = (st.paymentMethods && st.paymentMethods.length) ? st.paymentMethods : ['Cash', 'Bank Transfer', 'Payment Link', 'Other'];
-  el('setMethodColors').innerHTML = methods.map(n => sw(n, methodColor(n))).join('');
-  // service type colors — canonical config list
-  const svcs = (opt.services && opt.services.length) ? opt.services : ((st.serviceTypes && st.serviceTypes.length) ? st.serviceTypes : ['Legal Translation', 'MOFA Attestation', 'MOJ Attestation', 'Embassy Attestation']);
-  el('setChartColors').innerHTML = svcs.slice(0, 10).map((n, i) => sw(n, serviceColor(n, i))).join('');
-  // status colors — payment + delivery statuses from canonical config
-  const statuses = [...new Set([...(opt.statuses || ['Paid', 'Outstanding']), ...(opt.deliveries || ['Delivered', 'In Progress', 'Pending'])])];
-  if (el('setStatusColors')) el('setStatusColors').innerHTML = statuses.map(n => sw(n, statusColor(n))).join('');
+  // lead source colors (from the Settings master, coloured by the fixed identity)
+  const leads = (st.leadSources && st.leadSources.length) ? st.leadSources : ['Our Client', 'Google Ads', 'New', 'Walk-in Client', 'Other'];
+  el('setLeadColors').innerHTML = leads.map(n => sw(n, leadColor(n))).join('');
+  // payment method colors
+  el('setMethodColors').innerHTML = ['Bank Transfer', 'Payment Link', 'Cash', 'Other'].map(n => sw(n, methodColor(n))).join('');
+  // service + status chart colors
+  const svcs = (st.serviceTypes && st.serviceTypes.length) ? st.serviceTypes.slice(0, 8) : ['Legal Translation', 'MOFA', 'Embassy', 'MOJ'];
+  el('setChartColors').innerHTML = svcs.map((n, i) => sw(n, serviceColor(n, i))).join('')
+    + sw('Paid', C.green) + sw('Outstanding', C.red) + sw('Cancelled', '#9CA3AF');
 }
 // bind preference controls once
 function bindPrefs() {

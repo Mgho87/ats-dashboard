@@ -160,23 +160,6 @@ const upload = multer({
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
-// Rowan Daily Report (Google Ads / WhatsApp lead tracking) — SEPARATE, non-financial source.
-// Read-only. Configure ROWAN_GVIZ_URL (a published Google-Sheet gviz CSV link) to enable it.
-// Until configured it reports "not connected" so the dashboard never shows fake lead data,
-// and the official financial logic (Main Transactions) is completely untouched.
-app.get('/api/rowan', async (_req, res) => {
-  const url = (process.env.ROWAN_GVIZ_URL || process.env.ROWAN_SHEET_URL || '').trim();
-  if (!url) { res.json({ connected: false, reason: 'Rowan Daily Report source not configured (set ROWAN_GVIZ_URL)' }); return; }
-  try {
-    const r = await fetch(url, { cache: 'no-store', redirect: 'follow' });
-    if (!r.ok) throw new Error('Rowan source responded ' + r.status);
-    const csv = await r.text();
-    res.json({ connected: true, fetchedAt: new Date().toISOString(), csv });
-  } catch (e) {
-    res.json({ connected: false, reason: 'Could not reach Rowan source: ' + e.message });
-  }
-});
-
 // Forensic audit history — full field-level change log (newest first).
 app.get('/api/audit', async (_req, res) => {
   const changes = auditFx.loadHistory();

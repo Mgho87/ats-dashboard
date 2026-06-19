@@ -57,9 +57,9 @@
         <a data-page="money"><i class="ti ti-coin"></i><span>Money</span></a>
         <a data-page="collection"><i class="ti ti-cash-banknote"></i><span>Collection Center</span></a>
         <a data-page="pipeline"><i class="ti ti-route"></i><span>Pipeline</span></a>
+        <a data-page="operations"><i class="ti ti-adjustments"></i><span>Operations</span></a>
         <a data-page="clients"><i class="ti ti-users"></i><span>Clients</span></a>
         <a data-page="google"><i class="ti ti-brand-google"></i><span>Google Ads</span></a>
-        <a data-page="leads"><i class="ti ti-message-2-search"></i><span>Leads Review</span></a>
         <a data-page="reports"><i class="ti ti-report-analytics"></i><span>Reports</span></a>
         <a data-page="audit"><i class="ti ti-history"></i><span>Audit Log</span><span class="nav-badge" id="auditBadge"></span></a>
         <a data-page="health"><i class="ti ti-heartbeat"></i><span>System Health</span><span class="nav-dot" id="healthDot"></span></a>
@@ -68,10 +68,10 @@
       <div class="exec-card">
         <div class="exec-head"><span class="exec-t">Net Profit</span><span class="exec-tag" id="execTag">All time</span></div>
         <div class="exec-big mono" id="execProfit">—</div>
-        <div class="exec-margin"><span class="mono" id="execMargin">—</span> margin</div>
-        <div class="exec-bars">
-          <div class="eb-col"><div class="eb-track"><div class="eb-bar rev" id="execRevBar"></div></div><div class="eb-lbl">Revenue</div></div>
-          <div class="eb-col"><div class="eb-track"><div class="eb-bar exp" id="execExpBar"></div></div><div class="eb-lbl">Expenses</div></div>
+        <div class="exec-margin"><span class="mono" id="execMargin">—</span> net profit margin</div>
+        <div class="exec-split">
+          <div class="es-cell"><div class="es-l">Revenue</div><div class="es-v mono" id="execRev">—</div><div class="es-spark" id="execRevSpark"></div></div>
+          <div class="es-cell"><div class="es-l">Expenses</div><div class="es-v mono" id="execExp">—</div><div class="es-spark" id="execExpSpark"></div></div>
         </div>
         <button class="exec-btn" data-page="money">Open Money</button>
       </div>
@@ -126,7 +126,7 @@
       <section class="page active" id="page-overview">
         <div class="page-head"><div><h1>Executive Overview</h1><p id="ov-sub">Management summary across the selected period</p></div></div>
 
-        <!-- 1 · MAIN KPI CARDS -->
+        <!-- MAIN KPI CARDS -->
         <section class="hero">
           <div class="hcard h-blue"><div class="hc-ic"><i class="ti ti-cash"></i></div><div class="hc-lbl">TOTAL REVENUE</div><div class="hc-val mono" id="h-rev">—</div><div class="hc-ctx" id="h-rev-ctx"></div><div class="hc-mini" id="h-rev-mini"></div></div>
           <div class="hcard h-green"><div class="hc-ic"><i class="ti ti-wallet"></i></div><div class="hc-lbl">CASH COLLECTED</div><div class="hc-val mono" id="h-paid">—</div><div class="hc-ctx" id="h-paid-ctx"></div><div class="hc-mini" id="h-paid-mini"></div></div>
@@ -134,56 +134,49 @@
           <div class="hcard h-gold"><div class="hc-ic"><i class="ti ti-trending-up"></i></div><div class="hc-lbl">NET PROFIT</div><div class="hc-val mono" id="h-profit">—</div><div class="hc-ctx" id="h-profit-ctx"></div><div class="hc-mini" id="h-profit-mini"></div></div>
         </section>
 
-        <!-- Selected range headline metrics -->
+        <!-- SELECTED RANGE KPI STRIP -->
         <section class="today-bar">
           <div class="tb-h"><i class="ti ti-calendar-event"></i> SELECTED RANGE <span id="today-label"></span></div>
           <div class="today-cells" id="today"></div>
         </section>
 
-        <!-- 2 · REVENUE TREND (full width) -->
-        <div class="card"><h4>REVENUE TREND — MONTHLY</h4><div class="chart-box"><canvas id="ovTrend"></canvas></div></div>
-
-        <!-- 3 · DONUT GRID (2x2) — Row1: Lead Source + Service Type · Row2: Payment Methods + Payment Status -->
+        <!-- ============ EXECUTIVE CHARTS (req A: items 3-8, immediately after Selected Range) ============ -->
         <div class="grid-2">
-          <div class="card"><h4>LEAD SOURCE REVENUE</h4><div class="chart-box sm"><canvas id="ovLead"></canvas></div></div>
-          <div class="card"><h4>SERVICE TYPE / ATTESTATION REVENUE</h4><div class="chart-box sm"><canvas id="ovSvc"></canvas></div></div>
-        </div>
-        <div class="grid-2">
-          <div class="card"><h4>PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="ovMethods"></canvas></div></div>
+          <div class="card"><h4>REVENUE TREND — MONTHLY</h4><div class="chart-box"><canvas id="ovTrend"></canvas></div></div>
           <div class="card"><h4>PAYMENT STATUS</h4><div class="chart-box sm"><canvas id="ovPay"></canvas></div><div id="ovReconcile" class="reconcile"></div></div>
         </div>
-        <div class="card"><h4>QUICK HEALTH</h4><div id="ovHealth"></div></div>
-
-        <!-- 4 · PERIOD AT A GLANCE -->
-        <div class="card"><h4><i class="ti ti-calendar-stats"></i> THIS PERIOD AT A GLANCE — TODAY · YESTERDAY · THIS WEEK · THIS MONTH</h4><div id="periodicMatrix" class="pmx"></div></div>
-
-        <!-- 5 · TOP OPERATION CENTER — latest transactions -->
-        <div class="card"><h4><i class="ti ti-receipt-2"></i> TOP OPERATION CENTER — LATEST 10 TRANSACTIONS <span class="dimv small">— most recent records in range</span></h4><div id="ovLatest" class="mini-table"></div></div>
-
-        <!-- 6 · Top 5 Clients + Google Ads snapshot -->
         <div class="grid-2">
-          <div class="card"><h4><i class="ti ti-star"></i> TOP 5 CLIENTS <span class="dimv small">— by revenue in range</span></h4><div id="ovTopClients" class="mini-table"></div></div>
-          <div class="card"><h4><i class="ti ti-brand-google"></i> GOOGLE ADS SNAPSHOT <span class="dimv small">— attributed, in range</span></h4><div id="ovGoogleSnap"></div></div>
+          <div class="card"><h4>LEAD SOURCE REVENUE</h4><div class="chart-box sm"><canvas id="ovLead"></canvas></div></div>
+          <div class="card"><h4>PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="ovMethods"></canvas></div></div>
+        </div>
+        <div class="grid-2">
+          <div class="card"><h4>SERVICE TYPE REVENUE</h4><div id="ovSvc" class="svc-bars"></div></div>
+          <div class="card"><h4>QUICK HEALTH</h4><div id="ovHealth"></div></div>
         </div>
 
-        <!-- Forecast / risk / opportunities -->
+        <!-- ============ EXECUTIVE SUMMARY (req A: item 9 — after the charts) ============ -->
+        <div class="card exec-summary-card"><h4><i class="ti ti-dashboard"></i> EXECUTIVE SUMMARY <span class="dimv small">— today (Asia/Dubai) · this month · live leaders &amp; forecasts</span></h4><div id="execSummary" class="exsum-grid"></div></div>
+
+        <!-- EXECUTIVE INSIGHTS -->
+        <div class="card insights-card"><h4><i class="ti ti-bulb"></i> EXECUTIVE INSIGHTS</h4><div class="insights-grid" id="execInsights"></div></div>
+
+        <!-- FORECAST + RISK + OPPORTUNITIES -->
         <div class="grid-3">
           <div class="card"><h4><i class="ti ti-chart-arrows-vertical"></i> FORECAST</h4><div id="ovForecast"></div></div>
           <div class="card"><h4><i class="ti ti-shield-half"></i> OUTSTANDING RISK</h4><div id="ovRisk"></div></div>
           <div class="card"><h4><i class="ti ti-target-arrow"></i> QUICK OPPORTUNITIES</h4><div id="ovOpps"></div></div>
         </div>
+
+        <!-- TOP OPPORTUNITIES CENTER -->
         <div class="card"><h4><i class="ti ti-businessplan"></i> TOP OPPORTUNITIES CENTER</h4>
           <div class="opp-tabs" id="oppTabs"></div>
           <div id="oppPanel" class="mini-table"></div>
         </div>
 
-        <!-- 7 · EXECUTIVE SUMMARY (near the bottom, before Need Attention) -->
-        <div class="card exec-summary-card"><h4><i class="ti ti-dashboard"></i> EXECUTIVE SUMMARY <span class="dimv small">— today (Asia/Dubai) · this month · live leaders &amp; forecasts</span></h4><div id="execSummary" class="exsum-grid"></div></div>
+        <!-- PERIODIC EXECUTIVE MATRIX -->
+        <div class="card"><h4><i class="ti ti-calendar-stats"></i> THIS PERIOD AT A GLANCE — TODAY · YESTERDAY · THIS WEEK · THIS MONTH</h4><div id="periodicMatrix" class="pmx"></div></div>
 
-        <!-- 8 · EXECUTIVE INSIGHTS -->
-        <div class="card insights-card"><h4><i class="ti ti-bulb"></i> EXECUTIVE INSIGHTS</h4><div class="insights-grid" id="execInsights"></div></div>
-
-        <!-- 9 · NEEDS ATTENTION — always last -->
+        <!-- NEEDS ATTENTION (req #2 — the VERY BOTTOM / final section) -->
         <div class="card attention-card" id="attentionCard" hidden><h4><i class="ti ti-alert-hexagon"></i> NEEDS ATTENTION — PRIORITISED</h4><div id="attentionList" class="attn-list"></div></div>
       </section>
 
@@ -191,21 +184,15 @@
       <section class="page" id="page-money">
         <div class="page-head"><div><h1>Money</h1><p>Revenue, collections, cash flow & expenses</p></div></div>
         <div class="kpi-strip" id="moneyKpis"></div>
-        <!-- Row 1: Daily Revenue (full) · Row 2: Payment Methods + Lead Source · Row 3: Cash Flow + Service Type -->
-        <div class="card"><h4>B · DAILY REVENUE</h4><div class="chart-box"><canvas id="moDaily"></canvas></div></div>
-        <div class="grid-2">
-          <div class="card"><h4>C · PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="moMethods"></canvas></div></div>
-          <div class="card"><h4>D · LEAD SOURCE REVENUE</h4><div class="chart-box sm"><canvas id="moLead"></canvas></div></div>
-        </div>
-        <div class="grid-2">
-          <div class="card"><h4>A · COLLECTIONS vs OUTSTANDING — CASH FLOW</h4><div id="moCashflow"></div></div>
-          <div class="card"><h4>E · SERVICE TYPE REVENUE</h4><div id="moService" class="svc-bars"></div></div>
-        </div>
-        <div class="card"><h4>F · COLLECTION FORECAST</h4><div id="moCollForecast"></div></div>
-        <div class="card"><h4>G · OUTSTANDING / COLLECTIONS — PAYMENT AGEING</h4><div id="moAgeing" class="mini-table tall"></div></div>
-        <div class="card"><h4>H · LARGEST OUTSTANDING CLIENTS</h4><div id="moLargestOut" class="mini-table"></div></div>
-        <div class="card"><h4>I · TOP PAYING CLIENTS</h4><div id="moTopClients" class="mini-table tall"></div></div>
-        <div class="card"><h4>J · EXPENSES BREAKDOWN</h4><div id="moExpenses" class="mini-table"></div></div>
+        <!-- Pass1·T3: ordered lower sections -->
+        <div class="card"><h4>A · REVENUE vs EXPENSES — MONTHLY</h4><div class="chart-box"><canvas id="moTrend"></canvas></div></div>
+        <div class="card"><h4>B · PAYMENT METHODS</h4><div class="chart-box sm"><canvas id="moMethods"></canvas></div></div>
+        <div class="card"><h4>C · DAILY REVENUE</h4><div class="chart-box"><canvas id="moDaily"></canvas></div></div>
+        <div class="card"><h4>D · COLLECTION FORECAST</h4><div id="moCollForecast"></div></div>
+        <div class="card"><h4>E · OUTSTANDING / COLLECTIONS — PAYMENT AGEING</h4><div id="moAgeing" class="mini-table tall"></div></div>
+        <div class="card"><h4>E · LARGEST OUTSTANDING CLIENTS</h4><div id="moLargestOut" class="mini-table"></div></div>
+        <div class="card"><h4>E · TOP PAYING CLIENTS</h4><div id="moTopClients" class="mini-table tall"></div></div>
+        <div class="card"><h4>F · EXPENSES BREAKDOWN</h4><div id="moExpenses" class="mini-table"></div></div>
       </section>
 
       <!-- ============ COLLECTION CENTER (req #7) ============ -->
@@ -217,44 +204,25 @@
       </section>
 
       <!-- ============ PIPELINE ============ -->
-      <!-- ============ PIPELINE & OPERATIONS (merged workflow hub) ============ -->
       <section class="page" id="page-pipeline">
-        <div class="page-head"><div><h1>Pipeline &amp; Operations</h1><p>Delivery workflow, workload, collections &amp; client follow-up</p></div></div>
-
-        <!-- Workload KPIs (Total Orders · Delivered · Pending · AOV · Services · Cancelled) -->
-        <div class="kpi-strip" id="opsKpis"></div>
-
-        <!-- Pipeline funnel -->
+        <div class="page-head"><div><h1>Pipeline</h1><p>Leads → orders → delivery flow</p></div></div>
         <div class="funnel" id="pipeFunnel"></div>
-
-        <!-- Delivery Operations -->
-        <div class="grid-2">
-          <div class="card"><h4>ORDERS BY SERVICE</h4><div class="chart-box"><canvas id="opsService"></canvas></div></div>
-          <div class="card"><h4>DELIVERY PERFORMANCE</h4><div id="opsDelivery"></div></div>
-        </div>
         <div class="grid-2">
           <div class="card"><h4>LEAD SOURCE PERFORMANCE</h4><div id="pipeLeads" class="mini-table"></div></div>
           <div class="card"><h4>DELIVERY STATUS</h4><div class="chart-box sm"><canvas id="pipeDelivery"></canvas></div></div>
         </div>
-
-        <!-- Pending / In progress + filtered orders -->
-        <div class="card"><h4>PENDING / IN-PROGRESS DELIVERIES</h4><div id="opsPending" class="mini-table tall"></div></div>
         <div class="card"><h4>ORDERS — FILTERED</h4><div id="pipeOrders" class="mini-table tall"></div></div>
+      </section>
 
-        <!-- Operational Tools (follow-up shortcuts + admin actions) -->
-        <div class="card"><h4><i class="ti ti-tools"></i> OPERATIONAL TOOLS <span class="dimv small">— collections / client follow-up &amp; admin</span></h4>
-          <div class="ops-grid">
-            <button class="ops-card" data-page="collection"><i class="ti ti-cash-banknote"></i><span class="ops-t">Collection Center</span><span class="ops-s">Outstanding follow-up</span></button>
-            <button class="ops-card" data-page="clients"><i class="ti ti-users"></i><span class="ops-t">Clients</span><span class="ops-s">Client follow-up</span></button>
-            <button class="ops-card" data-page="google"><i class="ti ti-brand-google"></i><span class="ops-t">Untagged Orders Review</span><span class="ops-s">Attribution coverage</span></button>
-            <button class="ops-card" data-page="audit"><i class="ti ti-history"></i><span class="ops-t">Audit Log</span><span class="ops-s">Forensic change log</span></button>
-            <button class="ops-card" data-page="health"><i class="ti ti-heartbeat"></i><span class="ops-t">System Health</span><span class="ops-s">Trust &amp; data checks</span></button>
-            <button class="ops-card js-op-sync"><i class="ti ti-refresh"></i><span class="ops-t">Sync / Refresh Data</span><span class="ops-s">Reload live Google Sheet</span></button>
-            <button class="ops-card js-op-export"><i class="ti ti-file-export"></i><span class="ops-t">Export Report (CSV)</span><span class="ops-s">Current range &amp; filters</span></button>
-            <button class="ops-card" disabled><i class="ti ti-stethoscope"></i><span class="ops-t">Data Health Check</span><span class="ops-s ops-soon">Coming soon</span></button>
-            <button class="ops-card" disabled><i class="ti ti-tag-starred"></i><span class="ops-t">Missing Lead Source</span><span class="ops-s ops-soon">Coming soon</span></button>
-          </div>
+      <!-- ============ OPERATIONS ============ -->
+      <section class="page" id="page-operations">
+        <div class="page-head"><div><h1>Operations</h1><p>Delivery performance & workload</p></div></div>
+        <div class="kpi-strip" id="opsKpis"></div>
+        <div class="grid-2">
+          <div class="card"><h4>ORDERS BY SERVICE</h4><div class="chart-box"><canvas id="opsService"></canvas></div></div>
+          <div class="card"><h4>DELIVERY PERFORMANCE</h4><div id="opsDelivery"></div></div>
         </div>
+        <div class="card"><h4>PENDING / IN-PROGRESS DELIVERIES</h4><div id="opsPending" class="mini-table tall"></div></div>
       </section>
 
       <!-- ============ CLIENTS ============ -->
@@ -278,23 +246,23 @@
         <div id="gNote" class="callout" hidden></div>
         <div class="card"><h4><i class="ti ti-shield-check"></i> GOOGLE ADS LEAD QUALITY <span class="dimv small">— quality of the leads, separate from ROAS</span></h4><div id="gQuality" class="gqual"></div></div>
 
-        <!-- SECTION 2 — Orders vs Revenue (wide, first main chart) -->
-        <div class="card"><h4>ORDERS vs REVENUE — DAILY</h4><div class="chart-box"><canvas id="gOrdersRev"></canvas></div></div>
-
-        <!-- SECTION 3 — share + service type donuts directly under the wide daily chart -->
-        <div class="grid-2">
-          <div class="card"><h4>GOOGLE ADS REVENUE vs OTHER SOURCES</h4><div class="chart-box sm"><canvas id="gShare"></canvas></div></div>
-          <div class="card"><h4>REVENUE BY SERVICE TYPE</h4><div class="chart-box sm"><canvas id="gByService"></canvas></div></div>
-        </div>
-
-        <!-- SECTION 4 — Revenue vs Spend + ROAS trend, side by side -->
+        <!-- SECTION 2 — Revenue vs Spend + ROAS trend, side by side -->
         <div class="grid-2">
           <div class="card"><h4>REVENUE vs AD SPEND — MONTHLY</h4><div class="chart-box"><canvas id="gRevSpend"></canvas></div></div>
           <div class="card" id="gRoasCard"><h4>ROAS TREND</h4><div class="chart-box" id="gRoasBox"><canvas id="gRoasTrend"></canvas></div></div>
         </div>
 
-        <!-- SECTION 5 — Google Ads funnel BELOW the donuts, full width, fully visible (no scroll) -->
+        <!-- SECTION 3 — Orders vs Revenue, full width -->
+        <div class="card"><h4>ORDERS vs REVENUE — DAILY</h4><div class="chart-box"><canvas id="gOrdersRev"></canvas></div></div>
+
+        <!-- SECTION 4 — Google Ads funnel (Pass1·T4: above Share/Service; Pass1·T5: compact) -->
         <div class="card"><h4>GOOGLE ADS FUNNEL</h4><div class="g-funnel gfunnel-cap" id="gFunnel"></div></div>
+
+        <!-- SECTION 5 — share + service type, BELOW the funnel -->
+        <div class="grid-2">
+          <div class="card"><h4>GOOGLE ADS REVENUE vs OTHER SOURCES</h4><div class="chart-box sm"><canvas id="gShare"></canvas></div></div>
+          <div class="card"><h4>REVENUE BY SERVICE TYPE</h4><div class="chart-box sm"><canvas id="gByService"></canvas></div></div>
+        </div>
 
         <!-- SECTION 8 — Highest Spend Days + Highest ROAS Days (same row) -->
         <div class="grid-2">
@@ -318,13 +286,6 @@
         <div class="card" id="gEmirateCard"><h4>REVENUE BY EMIRATE</h4><div id="gEmirate" class="callout"><i class="ti ti-info-circle"></i> The Google Sheet has no Emirate/location column, so revenue-by-Emirate cannot be computed without inventing data. Add an "Emirate" column to the Transactions tab to enable this chart.</div></div>
       </section>
 
-      <!-- ============ GOOGLE ADS LEADS REVIEW (Rowan Daily Report) ============ -->
-      <section class="page" id="page-leads">
-        <div class="page-head"><div><h1>Google Ads Leads Review</h1><p>Rowan Daily Report — Google Ads / WhatsApp lead tracking &amp; reconciliation</p></div></div>
-        <div class="callout warn"><i class="ti ti-info-circle"></i> <span><b>Main Transactions</b> = official financial source of truth (all revenue / KPIs). <b>Rowan Daily Report</b> = Google Ads / WhatsApp lead tracking only. Duplicate rows after <b>17 Jun 2026</b> are expected — revenue is <b>never</b> double-counted; it always comes from Main Transactions.</span></div>
-        <div id="leadsBody"></div>
-      </section>
-
       <!-- ============ REPORTS ============ -->
       <section class="page" id="page-reports">
         <div class="page-head"><div><h1>Reporting Center</h1><p>Use this page to export filtered business reports based on the selected date range.</p></div>
@@ -336,8 +297,6 @@
         </div>
         <div class="callout"><i class="ti ti-info-circle"></i> Pick a report below. Every report reflects the <b>currently selected date range &amp; filters</b> from the bar above. Use <b>Export CSV / Excel</b> for the raw transaction data, or <b>Export PDF / Print</b> for the on-screen report.</div>
         <div class="kpi-strip" id="repKpis"></div>
-        <!-- Edit Report — source/sync status + change snapshot (read-only, real data only) -->
-        <div class="card"><h4><i class="ti ti-history"></i> EDIT REPORT — DASHBOARD STATUS &amp; RECENT CHANGES <span class="dimv small">— read-only · row-level history in Audit Log</span></h4><div id="repStatus"></div></div>
         <div class="rep-tabs" id="repTabs"></div>
         <div class="callout" id="repDesc"></div>
         <div class="card"><h4 id="repTitle">TRANSACTION REGISTER</h4><div id="repTable" class="mini-table tall"></div></div>
@@ -439,7 +398,13 @@
           <div id="prefSaved" class="pref-saved"></div>
         </div>
 
-        <!-- 2 · DATA & SYNC -->
+        <!-- req #9 + #2/#3: fixed colour identity used across all charts -->
+        <div class="grid-2">
+          <div class="card"><h4><i class="ti ti-palette"></i> LEAD SOURCE COLORS</h4><div id="setLeadColors" class="swatches"></div></div>
+          <div class="card"><h4><i class="ti ti-palette"></i> PAYMENT METHOD COLORS</h4><div id="setMethodColors" class="swatches"></div></div>
+        </div>
+        <div class="card"><h4><i class="ti ti-palette"></i> SERVICE &amp; STATUS CHART COLORS</h4><div id="setChartColors" class="swatches"></div></div>
+
         <div class="grid-2">
           <div class="card"><h4>DATA SOURCE</h4><div id="setSource" class="kv"></div>
             <div class="upload-row">
@@ -448,40 +413,6 @@
             </div>
           </div>
           <div class="card"><h4>SHEET STATUS</h4><div id="setSheet" class="kv"></div></div>
-        </div>
-
-        <!-- 3 · APPEARANCE (theme & density wired in Dashboard Preferences above) -->
-        <div class="card"><h4><i class="ti ti-brush"></i> APPEARANCE <span class="dimv small">— display options</span></h4>
-          <div class="set-help">Theme &amp; layout density are set in Dashboard Preferences above. These extra options are coming soon.</div>
-          <div class="prefs-grid">
-            <label class="pref"><span class="pref-l">Card radius <span class="soon-pill">Coming soon</span></span><select class="fsel" disabled><option>Default</option><option>Soft</option><option>Extra rounded</option></select></label>
-            <label class="pref"><span class="pref-l">Font size <span class="soon-pill">Coming soon</span></span><select class="fsel" disabled><option>Small</option><option>Default</option><option>Large</option></select></label>
-            <label class="pref"><span class="pref-l">Reduce motion <span class="soon-pill">Coming soon</span></span><select class="fsel" disabled><option>Off</option><option>On</option></select></label>
-            <label class="pref"><span class="pref-l">Chart animation <span class="soon-pill">Coming soon</span></span><select class="fsel" disabled><option>On</option><option>Off</option></select></label>
-          </div>
-        </div>
-
-        <!-- 4 · CHART DISPLAY (coming soon) -->
-        <div class="card"><h4><i class="ti ti-chart-donut"></i> CHART DISPLAY <span class="dimv small">— Coming soon</span></h4>
-          <div class="prefs-grid">
-            <label class="pref"><span class="pref-l">Show legends <span class="soon-pill">Coming soon</span></span><select class="fsel" disabled><option>On</option><option>Off</option></select></label>
-            <label class="pref"><span class="pref-l">Show grid lines <span class="soon-pill">Coming soon</span></span><select class="fsel" disabled><option>On</option><option>Off</option></select></label>
-            <label class="pref"><span class="pref-l">Show data labels <span class="soon-pill">Coming soon</span></span><select class="fsel" disabled><option>Off</option><option>On</option></select></label>
-            <label class="pref"><span class="pref-l">Tooltip mode <span class="soon-pill">Coming soon</span></span><select class="fsel" disabled><option>Simple</option><option>Detailed</option></select></label>
-            <label class="pref"><span class="pref-l">Chart height <span class="soon-pill">Coming soon</span></span><select class="fsel" disabled><option>Compact</option><option>Normal</option><option>Tall</option></select></label>
-            <label class="pref"><span class="pref-l">Donut thickness <span class="soon-pill">Coming soon</span></span><select class="fsel" disabled><option>Thin</option><option>Normal</option><option>Thick</option></select></label>
-            <label class="pref"><span class="pref-l">Bar rounding <span class="soon-pill">Coming soon</span></span><select class="fsel" disabled><option>Off</option><option>Soft</option><option>Rounded</option></select></label>
-          </div>
-        </div>
-
-        <!-- 5-8 · Colour identity (read from canonical Settings source) -->
-        <div class="grid-2">
-          <div class="card"><h4><i class="ti ti-palette"></i> LEAD SOURCE COLORS <span class="dimv small">— read from Settings</span></h4><div class="set-help">How each lead source is coloured across every chart &amp; filter.</div><div id="setLeadColors" class="swatches"></div></div>
-          <div class="card"><h4><i class="ti ti-palette"></i> PAYMENT METHOD COLORS <span class="dimv small">— read from Settings</span></h4><div class="set-help">Colours for each payment method.</div><div id="setMethodColors" class="swatches"></div></div>
-        </div>
-        <div class="grid-2">
-          <div class="card"><h4><i class="ti ti-palette"></i> SERVICE TYPE COLORS <span class="dimv small">— read from Settings</span></h4><div class="set-help">Colours for each service type.</div><div id="setChartColors" class="swatches"></div></div>
-          <div class="card"><h4><i class="ti ti-palette"></i> STATUS COLORS <span class="dimv small">— payment &amp; delivery</span></h4><div class="set-help">Payment &amp; delivery status colours.</div><div id="setStatusColors" class="swatches"></div></div>
         </div>
         <div class="grid-2">
           <div class="card"><h4>COLUMN MAPPING</h4><div id="setMapping" class="kv"></div></div>

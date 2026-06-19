@@ -122,14 +122,11 @@ function canonLead(raw) {
 function aliasLead(raw, allowed) {
   const v = String(raw == null ? '' : raw).trim();
   if (!v) return 'Other';
-  const n = norm(v);
-  // Keep "Google Ads Returning" as its own bucket (must be tested BEFORE the generic Google merge),
-  // so returning Google clients are not silently folded into direct "Google Ads".
-  if (n.includes('return') && (n.includes('google') || n.includes('ads'))) return 'Google Ads Returning';
   if (isGoogleLead(v)) return 'Google Ads';
-  if (n === 'our client' || n === 'existing client' || n === 'existing' || n === 'our clients' || n === 'client') return 'Our Client';
+  const n = norm(v);
+  if (n === 'our client' || n === 'existing client' || n === 'existing' || n === 'our clients') return 'Client';
   if (n.includes('walk')) return 'Walk-in Client';
-  if (n === 'new' || n === 'new client') return 'New Client';
+  if (n === 'new' || n === 'new client') return 'New';
   if (allowed && allowed.size && allowed.has(n)) return v; // exact Settings master value
   return 'Other';
 }
@@ -646,31 +643,20 @@ function analyze(parsed, filter) {
   const _expMonths = new Set(exps.filter(e => e.monthKey).map(e => e.monthKey));
   let _coveredM = 0; _revMonths.forEach(m => { if (_expMonths.has(m)) _coveredM++; });
   const _hasExp = K.totalExpenses > 0;
-  const _isAllTime = !filter.from && !filter.to;            // no explicit dates => spans all recorded months
   const _monthAligned = (() => {
-    if (_isAllTime) return true;                            // All Time always spans whole months — no pro-rating
     if (!from || !to) return false;
-    if (String(from).slice(8) !== '01') return false;       // must START on day 01 (whole-month range)
+    if (String(from).slice(8) !== '01') return false;                       // starts on day 01
     const [ty, tm] = String(to).split('-'); const lastDay = new Date(+ty, +tm, 0).getDate();
-    const endsMonth = (+String(to).slice(8) === lastDay);   // ends on a calendar month-end
-    // ...or runs through the latest available data / today (month-to-date) — robust when the
-    // sheet's last row lags the clock (e.g. data ends 17th but "today" is the 18th).
-    const throughLatest = (to >= (parsed.meta.maxDate || '0')) || (to >= parsed.today);
-    return endsMonth || throughLatest;
+    return (+String(to).slice(8) === lastDay) || (to === parsed.today);      // ends on month-end OR month-to-date
   })();
   const _allCovered = _revMonths.size > 0 && _coveredM === _revMonths.size;
-  /* Trigger rule: Net Profit is reliable for any MONTH-ALIGNED range (All Time, This/Last Month,
-   * This Year, month-to-date) because we sum REAL recorded expenses — no per-day pro-rating needed.
-   * It is only suppressed for sub-month ranges (Last 7 Days, Today, mid-month custom) where a fixed
-   * monthly cost would have to be split across days. Per-month expense gaps (_allCovered) are kept as
-   * an INFORMATIONAL signal for System Health, NOT a blocker — they don't require pro-rating. */
   const profitCoverage = {
-    reliable: _hasExp && _monthAligned,
-    hasExpenses: _hasExp, monthAligned: _monthAligned, allMonthsHaveExpenses: _allCovered,
+    reliable: _hasExp && _allCovered && _monthAligned,
+    hasExpenses: _hasExp, monthAligned: _monthAligned,
     activeMonths: _revMonths.size, coveredMonths: _coveredM, recordedExpenses: round2(K.totalExpenses),
     reason: !_hasExp ? 'No expenses recorded for this period'
       : !_monthAligned ? 'Whole-month / All-Time ranges only — monthly costs can’t be split per day'
-        : '',
+        : !_allCovered ? 'Expenses missing for some months in this range' : '',
   };
 
   /* ===== GOOGLE ADS ATTRIBUTION COMPLETENESS — untagged Lead Source orders can't be split ===== */
