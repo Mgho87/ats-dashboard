@@ -237,14 +237,67 @@ function applyFilter() {
 
 /* ---------- charts ---------- */
 const charts = {};
-function draw(id, cfg) { const c = el(id); if (!c) return; if (charts[id]) charts[id].destroy(); charts[id] = new Chart(c, cfg); }
+// Premium Chart.js defaults (fonts, tooltip, point-style legends) — applied once.
+if (window.Chart) {
+  try {
+    Chart.defaults.font.family = "'Inter',system-ui,Arial,sans-serif";
+    Chart.defaults.font.size = 11;
+    Chart.defaults.color = '#8A97B5';
+    Object.assign(Chart.defaults.plugins.tooltip, { backgroundColor: 'rgba(11,15,28,.95)', borderColor: '#2C375A', borderWidth: 1, padding: 10, cornerRadius: 8, boxPadding: 5, titleColor: '#FFFFFF', bodyColor: '#EAEEF8', usePointStyle: true });
+    Chart.defaults.plugins.legend.labels.usePointStyle = true;
+    Chart.defaults.plugins.legend.labels.pointStyle = 'circle';
+  } catch (e) {}
+}
+function draw(id, cfg) {
+  const c = el(id); if (!c) return;
+  if (charts[id]) { charts[id].destroy(); charts[id] = null; }
+  const box = c.parentElement;
+  if (box) { const e = box.querySelector('.chart-empty'); if (e) e.remove(); c.style.display = ''; }
+  // honest empty-state: no positive data in the selected range
+  const hasDatasets = !!(cfg.data && cfg.data.datasets && cfg.data.datasets.length);
+  const vals = hasDatasets ? cfg.data.datasets.flatMap(d => d.data || []) : [];
+  if (box && hasDatasets && !vals.some(x => { const n = Number(x); return !isNaN(n) && n !== 0; })) {
+    c.style.display = 'none';
+    const d = document.createElement('div'); d.className = 'chart-empty';
+    d.innerHTML = '<i class="ti ti-chart-dots-2"></i><span>No data for this range</span>';
+    box.appendChild(d);
+    return;
+  }
+  charts[id] = new Chart(c, cfg);
+}
 const gridc = () => document.body.classList.contains('light') ? 'rgba(0,0,0,.07)' : 'rgba(255,255,255,.06)';
 const axis = money => ({ responsive: true, maintainAspectRatio: false,
   plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => money ? AED(c.parsed.y ?? c.parsed) : NUM(c.parsed.y ?? c.parsed) } } },
   scales: { x: { ticks: { color: C.muted, font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 14 }, grid: { color: gridc() } },
             y: { ticks: { color: C.muted, font: { size: 10 }, callback: v => v >= 1000 ? v / 1000 + 'K' : v }, grid: { color: gridc() } } } });
-const doughnut = () => ({ responsive: true, maintainAspectRatio: false, cutout: '62%',
-  plugins: { legend: { position: 'right', labels: { color: C.muted, font: { size: 11 }, boxWidth: 11, padding: 9 } }, tooltip: { callbacks: { label: c => c.label + ': ' + AED(c.parsed) } } } });
+// unit: 'aed' (default) shows AED total in the center; 'num' shows a plain count. The center label is
+// purely the SUM of the slices already shown (no new calculation), drawn by the global plugin below.
+const doughnut = (unit = 'aed') => ({ responsive: true, maintainAspectRatio: false, cutout: '64%', _center: { unit },
+  plugins: { legend: { position: 'right', labels: { color: C.muted, font: { size: 11 }, boxWidth: 11, padding: 9 } }, tooltip: { callbacks: { label: c => c.label + ': ' + (unit === 'num' ? NUM(c.parsed) + ' orders' : AED(c.parsed)) } } } });
+// Global plugin: premium donut center total (display-only).
+if (window.Chart) {
+  try {
+    Chart.register({
+      id: 'donutCenterTotal',
+      afterDraw(chart) {
+        const o = chart.config.options; if (chart.config.type !== 'doughnut' || !o || !o._center) return;
+        const ds = chart.data.datasets[0]; if (!ds) return;
+        const total = (ds.data || []).reduce((a, b) => a + (Number(b) || 0), 0);
+        const a = chart.chartArea; if (!a) return;
+        const cx = (a.left + a.right) / 2, cy = (a.top + a.bottom) / 2, ctx = chart.ctx;
+        const cs = getComputedStyle(document.body);
+        ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = (cs.getPropertyValue('--text') || '#EAEEF8').trim();
+        ctx.font = '700 15px Inter, system-ui, sans-serif';
+        ctx.fillText(o._center.unit === 'num' ? NUM(total) : AEDk(total), cx, cy - 3);
+        ctx.fillStyle = (cs.getPropertyValue('--dim') || '#5C6889').trim();
+        ctx.font = '700 8.5px Inter, system-ui, sans-serif';
+        ctx.fillText('TOTAL', cx, cy + 12);
+        ctx.restore();
+      }
+    });
+  } catch (e) {}
+}
 
 /* ---------- sparkline ---------- */
 function spark(values, color, h = 46) {
@@ -756,7 +809,7 @@ function rPipeline() {
   ];
   el('pipeFunnel').innerHTML = steps.map(s => `<div class="fstep"><div class="fic" style="background:${s.c}22;color:${s.c}"><i class="ti ${s.ic}"></i></div><div class="fv mono">${NUM(s.v)}</div><div class="fn">${s.n}</div></div>`).join('<div class="farr"><i class="ti ti-chevron-right"></i></div>');
   el('pipeLeads').innerHTML = table(['Source', 'Revenue', 'Orders', 'Share'], v.leadSources.map(l => [esc(l.name), AED(l.revenue), NUM(l.orders), PCT(l.share)]));
-  draw('pipeDelivery', { type: 'doughnut', data: { labels: v.deliveryBreakdown.map(d => d.name), datasets: [{ data: v.deliveryBreakdown.map(d => d.count), backgroundColor: [C.green, C.orange, C.blue, C.red, C.teal], borderWidth: 0 }] }, options: Object.assign(doughnut(), { plugins: { legend: { position: 'right', labels: { color: C.muted, font: { size: 11 }, boxWidth: 11, padding: 9 } }, tooltip: { callbacks: { label: c => c.label + ': ' + NUM(c.parsed) + ' orders' } } } }) });
+  draw('pipeDelivery', { type: 'doughnut', data: { labels: v.deliveryBreakdown.map(d => d.name), datasets: [{ data: v.deliveryBreakdown.map(d => d.count), backgroundColor: [C.green, C.orange, C.blue, C.red, C.teal], borderWidth: 0 }] }, options: Object.assign(doughnut('num'), { plugins: { legend: { position: 'right', labels: { color: C.muted, font: { size: 11 }, boxWidth: 11, padding: 9 } }, tooltip: { callbacks: { label: c => c.label + ': ' + NUM(c.parsed) + ' orders' } } } }) });
   el('pipeOrders').innerHTML = table(['Date', 'Client', 'Service', 'Source', 'Amount', 'Payment', 'Delivery'], v.recentTransactions.map(o => [esc(o.date), esc(o.client || '—'), esc(o.service), esc(o.lead), AED(o.amount), badge(o.status), badge(o.delivery)]));
 }
 
@@ -809,7 +862,7 @@ function rClients() {
   draw('clChart', { type: 'bar', data: { labels: top.map(c => c.client || '—'), datasets: [{ data: top.map(c => c.revenue), backgroundColor: C.teal, borderRadius: 4 }] }, options: Object.assign(axis(true), { indexAxis: 'y' }) });
   const byLead = {}; tc.forEach(c => byLead[c.lead] = (byLead[c.lead] || 0) + 1);
   const llabels = Object.keys(byLead);
-  draw('clLead', { type: 'doughnut', data: { labels: llabels, datasets: [{ data: Object.values(byLead), backgroundColor: llabels.map(leadColor), borderWidth: 0 }] }, options: Object.assign(doughnut(), { plugins: { legend: { position: 'right', labels: { color: C.muted, font: { size: 11 }, boxWidth: 11, padding: 9 } }, tooltip: { callbacks: { label: c => c.label + ': ' + NUM(c.parsed) + ' clients' } } } }) });
+  draw('clLead', { type: 'doughnut', data: { labels: llabels, datasets: [{ data: Object.values(byLead), backgroundColor: llabels.map(leadColor), borderWidth: 0 }] }, options: Object.assign(doughnut('num'), { plugins: { legend: { position: 'right', labels: { color: C.muted, font: { size: 11 }, boxWidth: 11, padding: 9 } }, tooltip: { callbacks: { label: c => c.label + ': ' + NUM(c.parsed) + ' clients' } } } }) });
   el('clTable').innerHTML = table(['Client', 'Source', 'Orders', 'Revenue', 'Outstanding', 'Last Order'], tc.slice(0, 50).map(c => [`<span class="lk" data-client="${esc(c.client)}">${esc(c.client || '—')}</span>`, esc(c.lead) + (c.repeat ? ' <span class="pill info">repeat</span>' : ''), NUM(c.orders), AED(c.revenue), c.outstanding > 0 ? `<span class="warn-txt">${AED(c.outstanding)}</span>` : AED(0), esc(c.lastDate)]));
   el('clTable').querySelectorAll('[data-client]').forEach(s => s.addEventListener('click', () => openClient(s.dataset.client)));
 }
