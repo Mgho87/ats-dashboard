@@ -291,6 +291,22 @@ body.light .exec-card{background:linear-gradient(160deg,#eef2fb,#fff)}
 .rl-nc-s{font-size:12.5px;color:var(--muted);margin-top:3px}
 .rl-list{margin:8px 0 0;padding-left:18px;font-size:12px;color:var(--muted);line-height:1.7}
 .rl-list b{color:var(--text)}
+/* Rawan Daily Report — live lead table (Leads Review) */
+.rl-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
+.rl-filters input,.rl-filters select{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:7px 10px;font-size:12px;font-family:inherit;outline:none}
+.rl-filters input{flex:1 1 240px;min-width:160px}
+.rl-filters input:focus,.rl-filters select:focus{border-color:var(--accent)}
+.rl-count{font-size:11.5px;color:var(--dim);margin-left:auto;white-space:nowrap}
+.rl-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}
+.rl-synced{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.rl-synced i{font-size:14px;color:var(--blue)}
+.rl-synced b{color:var(--text);font-variant-numeric:tabular-nums}
+.rl-sync{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line2);color:var(--text);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;transition:border-color .14s,background .14s}
+.rl-sync:hover{border-color:var(--accent);background:var(--panel2)}
+.rl-sync i{font-size:14px;color:var(--accent)}
+.rl-note{font-size:11px;color:var(--dim);line-height:1.45;margin-top:10px;display:flex;gap:7px;align-items:flex-start}
+.rl-note i{color:var(--blue);font-size:14px;flex:none}
+.dt td .mono{font-variant-numeric:tabular-nums}
 
 /* edit report — status + change snapshot */
 .rc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(20rem,1fr));gap:18px}
@@ -629,11 +645,31 @@ body.light .exec-card{background:linear-gradient(160deg,#eef2fb,#fff)}
 .es-v{font-size:14px;font-weight:800;margin-top:3px}
 .es-spark{height:26px;margin-top:7px;opacity:.92}
 
-/* compact density (req #9) */
-body.compact .content{gap:11px;padding:12px 16px 36px}
-body.compact .card{padding:12px}
-body.compact .grid-2,body.compact .grid-3,body.compact .kpi-strip,body.compact .hero,body.compact .today-cells{gap:11px}
-body.compact .chart-box{height:242px}body.compact .chart-box.sm{height:200px}
+/* compact density (req #9) — denser spacing AND smaller numbers/cards/icons/headings */
+body.compact .content{gap:10px;padding:11px 14px 32px}
+body.compact .card{padding:11px}
+body.compact .grid-2,body.compact .grid-3,body.compact .kpi-strip,body.compact .hero,body.compact .today-cells{gap:10px}
+body.compact .chart-box{height:208px}body.compact .chart-box.sm{height:172px}
+/* page + section headings */
+body.compact .page-head h1{font-size:17px}
+body.compact .page-head p{font-size:11px}
+/* top hero KPI cards */
+body.compact .hero{gap:10px}
+body.compact .hcard{padding:11px 13px;min-height:84px}
+body.compact .hc-ic{width:30px;height:30px;border-radius:9px;font-size:15px;margin-bottom:2px}
+body.compact .hc-lbl{font-size:9.5px;letter-spacing:.7px}
+body.compact .hc-val{font-size:20px;margin-top:3px}
+body.compact .hc-ctx{font-size:10.5px;margin-top:3px}
+body.compact .hc-mini{font-size:10px;margin-top:5px;padding-top:5px}
+/* selected-range strip */
+body.compact .today-bar{padding:10px 13px}
+body.compact .today-cells{margin-top:9px}
+body.compact .tcell{gap:9px}
+body.compact .tcell .tic{width:31px;height:31px;border-radius:9px;font-size:15px}
+body.compact .tcell .tv{font-size:14px}
+/* KPI strip cards (Money/Clients/etc.) */
+body.compact .kc{padding:10px 11px}
+body.compact .kc-v{font-size:17px;margin:4px 0 3px}
 
 /* responsive / zoom hardening (req #11) — grids reflow, tables scroll, columns reduce gracefully */
 .mini-table{-webkit-overflow-scrolling:touch}
@@ -778,3 +814,33 @@ html,body{overflow-x:hidden}            /* no horizontal PAGE overflow… */
   .icon-btn{width:2.6rem;height:2.6rem}
   .lk,.mini-btn{min-height:1.9rem;display:inline-flex;align-items:center}
 }
+
+/* ===================== DESIGN POLISH PASS — CSS ONLY (appended; safe to remove) =====================
+   Conservative clarity/tidiness refinements. Same visual language. No layout reflow, no data, no logic.
+   To revert: delete this block, or restore backups/pre-design-polish-20260622/styles.css */
+
+/* 1 · Micro-labels — tighten over-wide letter-spacing so small uppercase text reads crisper */
+.card h4{letter-spacing:.85px}
+.hc-lbl{letter-spacing:.6px}
+.kc-l{letter-spacing:.5px}
+.tcell .tl{letter-spacing:.4px}
+.tb-h{letter-spacing:1.4px}
+.brand-sub{letter-spacing:1.8px}
+.dt thead th{letter-spacing:.5px}
+
+/* 2 · Section card titles — a touch more legible (kept subtle, same hierarchy) */
+.card h4{font-size:11.5px}
+
+/* 3 · Tables — clearer header separation + smoother hover for scanning long lists */
+.dt thead th{font-size:10.5px;border-bottom:1px solid var(--line2)}
+.dt tbody tr{transition:background .12s ease}
+.dt tbody tr:hover{background:var(--panel2)}
+
+/* 4 · Cards — unify corner radius so KPI strip cards match the main cards */
+.kc{border-radius:var(--radius)}
+
+/* 5 · Numbers — consistent tabular alignment so figures line up tidily in columns */
+.kc-v,.hc-val,.exec-big,.tcell .tv,.fv,.kpi-strip .kc-v{font-variant-numeric:tabular-nums}
+
+/* 6 · Charts — give chart cards a slightly calmer, consistent inner gutter */
+.card .chart-box{margin-top:2px}

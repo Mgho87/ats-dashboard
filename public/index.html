@@ -56,6 +56,7 @@
         <a class="active" data-page="overview"><i class="ti ti-layout-dashboard"></i><span>Overview</span></a>
         <a data-page="money"><i class="ti ti-coin"></i><span>Money</span></a>
         <a data-page="collection"><i class="ti ti-cash-banknote"></i><span>Collection Center</span></a>
+        <a data-page="office"><i class="ti ti-building-bank"></i><span>Office Payments</span></a>
         <a data-page="pipeline"><i class="ti ti-route"></i><span>Pipeline</span></a>
         <a data-page="clients"><i class="ti ti-users"></i><span>Clients</span></a>
         <a data-page="google"><i class="ti ti-brand-google"></i><span>Google Ads</span></a>
@@ -216,6 +217,18 @@
         <div class="card"><h4><i class="ti ti-users"></i> CLIENTS WITH OUTSTANDING — BY AMOUNT</h4><div id="collClients" class="mini-table tall"></div></div>
       </section>
 
+      <!-- ============ OFFICE PAYMENTS (derived, read-only from Expenses) ============ -->
+      <section class="page" id="page-office">
+        <div class="page-head"><div><h1>Office Payments</h1><p>Outgoing office expenses — derived read-only from the Expenses sheet</p></div></div>
+        <div class="kpi-strip" id="officeKpis"></div>
+        <div class="grid-2">
+          <div class="card"><h4>BY CATEGORY</h4><div id="officeByCat" class="svc-bars"></div></div>
+          <div class="card"><h4>BY PAYMENT METHOD</h4><div id="officeByMethod" class="svc-bars"></div></div>
+        </div>
+        <div class="card"><h4>MONTHLY TREND</h4><div class="chart-box"><canvas id="officeTrend"></canvas></div></div>
+        <div class="card"><h4>RECENT OFFICE PAYMENTS</h4><div id="officeTable" class="mini-table tall"></div></div>
+      </section>
+
       <!-- ============ PIPELINE ============ -->
       <!-- ============ PIPELINE & OPERATIONS (merged workflow hub) ============ -->
       <section class="page" id="page-pipeline">
@@ -318,10 +331,9 @@
         <div class="card" id="gEmirateCard"><h4>REVENUE BY EMIRATE</h4><div id="gEmirate" class="callout"><i class="ti ti-info-circle"></i> The Google Sheet has no Emirate/location column, so revenue-by-Emirate cannot be computed without inventing data. Add an "Emirate" column to the Transactions tab to enable this chart.</div></div>
       </section>
 
-      <!-- ============ GOOGLE ADS LEADS REVIEW (Rowan Daily Report) ============ -->
+      <!-- ============ GOOGLE ADS LEADS REVIEW (Rawan Daily Report) ============ -->
       <section class="page" id="page-leads">
-        <div class="page-head"><div><h1>Google Ads Leads Review</h1><p>Rowan Daily Report — Google Ads / WhatsApp lead tracking &amp; reconciliation</p></div></div>
-        <div class="callout warn"><i class="ti ti-info-circle"></i> <span><b>Main Transactions</b> = official financial source of truth (all revenue / KPIs). <b>Rowan Daily Report</b> = Google Ads / WhatsApp lead tracking only. Duplicate rows after <b>17 Jun 2026</b> are expected — revenue is <b>never</b> double-counted; it always comes from Main Transactions.</span></div>
+        <div class="page-head"><div><h1>Google Ads Leads Review</h1><p>Rawan Daily Report — Google Ads / WhatsApp lead tracking &amp; reconciliation</p></div></div>
         <div id="leadsBody"></div>
       </section>
 

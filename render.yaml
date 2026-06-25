@@ -23,6 +23,16 @@ services:
         value: Settings
       - key: EXCEL_EMERGENCY_FALLBACK
         value: "false"
+      # Rawan Daily Report — published-to-web CSV (public, lead-tracking only; never revenue).
+      - key: RAWAN_GVIZ_URL
+        value: https://docs.google.com/spreadsheets/d/e/2PACX-1vT0U4OaCeJa5z9Uj9e2URY8gSo4NxpYMFi35JPEEsHeDeFIcztbWhsv4jWA8lXUP9l8kLRpSuZPjTOw/pub?output=csv
+      # --- Authentication (Priority #1). DASHBOARD_PASSWORD is a SECRET: set its
+      #     value in the Render dashboard (Environment tab). sync:false keeps it
+      #     OUT of git so no secret is ever committed. ---
+      - key: DASHBOARD_USER
+        value: admin
+      - key: DASHBOARD_PASSWORD
+        sync: false            # set in Render dashboard; never committed
       - key: AUDIT_DIR        # forensic history persists on the disk below
         value: /var/data
       - key: NODE_VERSION

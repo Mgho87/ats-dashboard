@@ -13,6 +13,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const express = require('express');
 const multer = require('multer');
 const { fetchSheet, fetchSheetOptional } = require('./lib/sheets');
@@ -129,6 +130,57 @@ function sourceLabel(src) {
 
 const app = express();
 
+/* =============================== AUTHENTICATION ===============================
+ * Priority #1 security gate. The dashboard and ALL business-data APIs sit behind
+ * HTTP Basic Auth. Credentials come ONLY from environment variables — never
+ * hard-coded, never committed.
+ *
+ *   DASHBOARD_USER      optional, default "admin"
+ *   DASHBOARD_PASSWORD  REQUIRED — if unset, the dashboard fails CLOSED (503),
+ *                       so a misconfigured deploy never exposes data by accident.
+ *
+ * Public (no auth): /api/health only — it returns no business data and is needed
+ * for the Render health probe (healthCheckPath: /api/health).
+ *
+ * Local dev: put DASHBOARD_USER / DASHBOARD_PASSWORD in .env (gitignored). */
+const AUTH_USER = process.env.DASHBOARD_USER || 'admin';
+const AUTH_PASS = process.env.DASHBOARD_PASSWORD || '';
+
+function safeEqual(a, b) {
+  const A = Buffer.from(String(a), 'utf8'), B = Buffer.from(String(b), 'utf8');
+  if (A.length !== B.length) return false;          // content compared in constant time below
+  try { return crypto.timingSafeEqual(A, B); } catch (_) { return false; }
+}
+function hasValidBasicAuth(req) {
+  const m = /^Basic\s+(.+)$/i.exec(req.headers.authorization || '');
+  if (!m) return false;
+  let decoded = '';
+  try { decoded = Buffer.from(m[1], 'base64').toString('utf8'); } catch (_) { return false; }
+  const i = decoded.indexOf(':');
+  if (i < 0) return false;
+  const user = decoded.slice(0, i), pass = decoded.slice(i + 1);
+  const okUser = safeEqual(user, AUTH_USER);        // evaluate both (no early-out) to keep timing flat
+  const okPass = safeEqual(pass, AUTH_PASS);
+  return okUser && okPass;
+}
+function requireAuth(req, res, next) {
+  if (!AUTH_PASS) {                                  // fail closed: no password configured
+    audit('error', 'Access blocked — no auth configured', `${req.method} ${req.path} denied (DASHBOARD_PASSWORD unset)`);
+    res.status(503).type('text/plain').send(
+      'Dashboard locked. Set the DASHBOARD_PASSWORD environment variable to enable access.');
+    return;
+  }
+  if (hasValidBasicAuth(req)) return next();
+  res.set('WWW-Authenticate', 'Basic realm="ALMUTARJEM Executive Control Center", charset="UTF-8"');
+  res.status(401).type('text/plain').send('Authentication required.');
+}
+
+// PUBLIC endpoint — health check only (no business data); needed for the host probe.
+app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
+
+// ---- Everything registered AFTER this line requires authentication ----
+app.use(requireAuth);
+
 // Cache-busting: version assets per server start + force browsers to revalidate.
 // Prevents stale app.js/styles.css (old banner logic) from lingering in the browser.
 const ASSET_VER = Date.now();
@@ -158,22 +210,32 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 },
 });
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
+// (/api/health is now defined above, before the auth gate, so it stays public.)
 
-// Rowan Daily Report (Google Ads / WhatsApp lead tracking) — SEPARATE, non-financial source.
-// Read-only. Configure ROWAN_GVIZ_URL (a published Google-Sheet gviz CSV link) to enable it.
+// Rawan Daily Report (Google Ads / WhatsApp lead tracking) — SEPARATE, non-financial source.
+// Read-only. Configure RAWAN_GVIZ_URL (a published Google-Sheet gviz CSV link) to enable it.
 // Until configured it reports "not connected" so the dashboard never shows fake lead data,
 // and the official financial logic (Main Transactions) is completely untouched.
-app.get('/api/rowan', async (_req, res) => {
-  const url = (process.env.ROWAN_GVIZ_URL || process.env.ROWAN_SHEET_URL || '').trim();
-  if (!url) { res.json({ connected: false, reason: 'Rowan Daily Report source not configured (set ROWAN_GVIZ_URL)' }); return; }
+// Back-compat: the old ROWAN_GVIZ_URL / ROWAN_SHEET_URL names are still read as a fallback.
+app.get('/api/rawan', async (_req, res) => {
+  const url = (process.env.RAWAN_GVIZ_URL || process.env.RAWAN_SHEET_URL || process.env.ROWAN_GVIZ_URL || process.env.ROWAN_SHEET_URL || '').trim();
+  if (!url) { res.json({ connected: false, reason: 'Rawan Daily Report source not configured (set RAWAN_GVIZ_URL)' }); return; }
   try {
-    const r = await fetch(url, { cache: 'no-store', redirect: 'follow' });
-    if (!r.ok) throw new Error('Rowan source responded ' + r.status);
+    // Cache-busting: Google edge-caches published CSVs, so a plain fetch can return a stale copy
+    // for minutes after the sheet is edited. Append a unique timestamp param + no-cache headers so
+    // every call (especially "Sync now") forces a fresh pull. The dashboard never caches Rawan rows.
+    const bust = (url.includes('?') ? '&' : '?') + '_=' + Date.now();
+    const r = await fetch(url + bust, {
+      cache: 'no-store', redirect: 'follow',
+      headers: { 'Cache-Control': 'no-cache, no-store, max-age=0', 'Pragma': 'no-cache' },
+    });
+    if (!r.ok) throw new Error('Rawan source responded ' + r.status);
     const csv = await r.text();
+    // also tell the browser/any proxy never to cache this API response
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.json({ connected: true, fetchedAt: new Date().toISOString(), csv });
   } catch (e) {
-    res.json({ connected: false, reason: 'Could not reach Rowan source: ' + e.message });
+    res.json({ connected: false, reason: 'Could not reach Rawan source: ' + e.message });
   }
 });
 

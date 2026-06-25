@@ -57,7 +57,7 @@ let oppTab = 'A', repTab = 'register', auditMode = 'detect';
    sessionStorage    → scroll position (per page, same-tab)
    localStorage      → user PREFERENCES only (+ a remembered last-view string for bare-URL opens) */
 const PREFS_KEY = 'ats-prefs', VIEW_KEY = 'ats-view';
-const PREF_DEFAULTS = { landing: 'overview', range: 'all', remember: '1', density: 'comfortable', notif: 'all' };
+const PREF_DEFAULTS = { landing: 'overview', range: 'all', remember: '1', density: 'compact', notif: 'all' };
 function getPrefs() { try { return Object.assign({}, PREF_DEFAULTS, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); } catch (_) { return Object.assign({}, PREF_DEFAULTS); } }
 function setPref(k, v) { const p = getPrefs(); p[k] = v; try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch (_) {} }
 function applyPrefs() { document.body.classList.toggle('compact', getPrefs().density === 'compact'); }
@@ -246,6 +246,25 @@ if (window.Chart) {
     Object.assign(Chart.defaults.plugins.tooltip, { backgroundColor: 'rgba(11,15,28,.95)', borderColor: '#2C375A', borderWidth: 1, padding: 10, cornerRadius: 8, boxPadding: 5, titleColor: '#FFFFFF', bodyColor: '#EAEEF8', usePointStyle: true });
     Chart.defaults.plugins.legend.labels.usePointStyle = true;
     Chart.defaults.plugins.legend.labels.pointStyle = 'circle';
+    // Donut/pie tooltip placement (global): anchor the tooltip on the OUTER EDGE of the hovered
+    // slice (radially outward) so it never covers the center TOTAL / % label. Works for desktop
+    // hover, iPad tap and mobile tap. Non-arc charts (line/bar) fall back to the default average.
+    if (Chart.Tooltip && Chart.Tooltip.positioners) {
+      Chart.Tooltip.positioners.donutEdge = function (items, eventPos) {
+        if (!items || !items.length) return eventPos || false;
+        const e = items[0].element;
+        if (e && typeof e.outerRadius === 'number' && typeof e.startAngle === 'number') {
+          const ang = (e.startAngle + e.endAngle) / 2;      // mid-angle of the slice
+          const r = e.outerRadius + 2;                       // just outside the ring (clear of center)
+          return { x: e.x + Math.cos(ang) * r, y: e.y + Math.sin(ang) * r };
+        }
+        let x = 0, y = 0, n = 0;                             // line/bar: average of active points
+        for (const it of items) { const p = it.element.tooltipPosition(); x += p.x; y += p.y; n++; }
+        return n ? { x: x / n, y: y / n } : (eventPos || false);
+      };
+      Chart.defaults.plugins.tooltip.position = 'donutEdge';
+      Chart.defaults.plugins.tooltip.caretPadding = 6;       // small gap so the box clears the arc
+    }
   } catch (e) {}
 }
 function draw(id, cfg) {
@@ -416,7 +435,7 @@ function renderChrome() {
 }
 
 function renderPage(page) {
-  ({ overview: rOverview, money: rMoney, collection: rCollection, pipeline: () => { rPipeline(); rOps(); }, operations: () => { rPipeline(); rOps(); }, clients: rClients, google: rGoogle, leads: rLeads, reports: rReports, audit: rAudit, health: rHealth, settings: rSettings }[page] || (() => {}))();
+  ({ overview: rOverview, money: rMoney, collection: rCollection, office: rOffice, pipeline: () => { rPipeline(); rOps(); }, operations: () => { rPipeline(); rOps(); }, clients: rClients, google: rGoogle, leads: rLeads, reports: rReports, audit: rAudit, health: rHealth, settings: rSettings }[page] || (() => {}))();
   balanceKpiRows();
 }
 // Balanced KPI rows: choose a column count from BOTH the card count and the viewport width,
@@ -624,6 +643,19 @@ function rCollection() {
       `<button class="mini-btn" data-open="${esc(cl.client)}">Open Client</button>`,
     ]));
   el('collClients').querySelectorAll('[data-client],[data-open]').forEach(s => s.addEventListener('click', () => openClient(s.dataset.client || s.dataset.open)));
+}
+function rOffice(){
+  const op=(state.data.view.officePayments)||{};
+  el('officeKpis').innerHTML=[
+    kpi('Total Office Payments', AED(op.total||0), NUM(op.count||0)+' payments', (op.total||0)>0?'warn':'good'),
+    kpi('Categories', NUM((op.byCategory||[]).length), 'expense categories'),
+    kpi('Top Category', (op.byCategory&&op.byCategory[0])?op.byCategory[0].name:'—', (op.byCategory&&op.byCategory[0])?AED(op.byCategory[0].amount):''),
+    kpi('Top Method', (op.byMethod&&op.byMethod[0])?op.byMethod[0].name:'—', (op.byMethod&&op.byMethod[0])?AED(op.byMethod[0].amount):''),
+  ].join('');
+  el('officeByCat').innerHTML=(op.byCategory&&op.byCategory.length)?bars(op.byCategory.map(c=>({name:c.name,value:c.amount}))):'<div class="empty">No office payments in this range</div>';
+  el('officeByMethod').innerHTML=(op.byMethod&&op.byMethod.length)?bars(op.byMethod.map(m=>({name:m.name,value:m.amount}))):'<div class="empty">No office payments in this range</div>';
+  draw('officeTrend',{type:'bar',data:{labels:(op.monthlyTrend||[]).map(t=>t.label),datasets:[{data:(op.monthlyTrend||[]).map(t=>t.amount),backgroundColor:'#F0616A',borderRadius:6,maxBarThickness:38}]},options:axis(true)});
+  el('officeTable').innerHTML=table(['Date','Category','Method','Status','Amount'],(op.recent||[]).map(p=>[esc(p.date),esc(p.category),esc(p.method||'—'),esc(p.status||'—'),AED(p.amount)]));
 }
 function healthRow(l, v, tone) { return `<div class="hr"><span class="hr-l">${l}</span><span class="hr-v mono">${v}</span><span class="dot ${tone}"></span></div>`; }
 
@@ -900,7 +932,7 @@ function rGoogle() {
   const attrLine = attr.complete
     ? `All ${NUM(attr.totalOrders)} orders carry a Lead Source tag — attribution is complete.`
     : `<b>Attribution may be incomplete:</b> ${NUM(attr.untaggedOrders)} of ${NUM(attr.totalOrders)} orders have <b>no Lead Source tag</b> (${PCT(attr.taggedShare)} tagged). Untagged orders are <b>not</b> allocated to Google Ads or other sources — treat these figures as directional.`;
-  const note = el('gNote'); note.hidden = false;
+  const note = el('gNote'); note.hidden = true; note.innerHTML = '';   // note banner removed (clean Google Ads page); real errors still use errorBanner/Audit Log
   const base = `<i class="ti ti-info-circle"></i> <b>Based on tagged Lead Source = "Google Ads"</b> (directional attribution). `;
   if (noSpend) { note.className = 'callout warn'; note.innerHTML = base + `<b>No Google Ads spend recorded for this period</b> — ROAS &amp; CPA need an Expenses "Google Ads" row. Revenue &amp; orders above are real, attributed from tagged Lead Source. <br>${attrLine}`; }
   else { note.className = 'callout' + (attr.complete ? '' : ' warn'); note.innerHTML = base + `Spend from Expenses "Google Ads"; score = ROAS + CPA + conversion. ROAS ${g.roas.toFixed(2)}x · CPA ${AED(g.cpa)} · conversion ${PCT(g.conversionRate)}. <br>${attrLine}`; }
@@ -1035,29 +1067,178 @@ function renderEditReport(v, k) {
      </div>
      <div class="rc-note"><i class="ti ti-info-circle"></i> Row-level Google Sheet change history (who/what/before→after) is in the <b>Audit Log</b>. Change-type filters &amp; report exports are ${bdg('Coming soon', 'soon')}.</div>`;
 }
-// Google Ads Leads Review (Rowan Daily Report) — read-only, separate from financial data.
-let _rowan = null, _rowanFetched = false;
+/* ===== Google Ads Leads Review — Rawan Daily Report (live, read-only, NON-financial) =====
+   Reads /api/rawan only. Never counted as revenue. No fabricated rows/totals/statuses. */
+var _rawan = null, _rawanFetched = false, _rawanRows = null, _rawanErr = null;
+var _rawanFilter = { q: '', lead: '', pay: '', outcome: '' };
+
+// minimal RFC-4180 CSV parser (quoted fields, embedded commas/newlines, "" escapes)
+function parseCSV(text) {
+  const rows = []; let i = 0, field = '', row = [], inQ = false; const s = String(text || '');
+  while (i < s.length) {
+    const c = s[i];
+    if (inQ) {
+      if (c === '"') { if (s[i + 1] === '"') { field += '"'; i += 2; continue; } inQ = false; i++; continue; }
+      field += c; i++; continue;
+    }
+    if (c === '"') { inQ = true; i++; continue; }
+    if (c === ',') { row.push(field); field = ''; i++; continue; }
+    if (c === '\r') { i++; continue; }
+    if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+    field += c; i++;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+// map the live (mis-spelled) sheet headers to canonical fields — sheet stays untouched
+function rawanColMap(header) {
+  const idx = {};
+  header.forEach((h, n) => {
+    const k = String(h || '').trim().toLowerCase();
+    if (/refr?ence|reference/.test(k)) idx.reference = n;
+    else if (k === 'date') idx.date = n;
+    else if (/client/.test(k)) idx.client = n;
+    else if (/phone/.test(k)) idx.phone = n;
+    else if (/service/.test(k)) idx.service = n;
+    else if (/amount/.test(k)) idx.amount = n;
+    else if (/payment status/.test(k)) idx.payStatus = n;
+    else if (/file status/.test(k)) idx.fileStatus = n;
+    else if (/payment method/.test(k)) idx.payMethod = n;
+    else if (/lead source/.test(k)) idx.leadSource = n;
+    else if (/lead outcome/.test(k)) idx.leadOutcome = n;
+    else if (/note/.test(k)) idx.notes = n;
+  });
+  return idx;
+}
+function rawanAmount(s) { const n = parseFloat(String(s || '').replace(/[^0-9.\-]/g, '')); return isNaN(n) ? 0 : n; }
+function rawanParse(csv) {
+  const grid = parseCSV(csv).filter(r => r.some(c => String(c).trim() !== ''));
+  if (!grid.length) return [];
+  const idx = rawanColMap(grid[0]);
+  const get = (r, f) => idx[f] != null ? String(r[idx[f]] == null ? '' : r[idx[f]]).trim() : '';
+  return grid.slice(1).map(r => ({
+    date: get(r, 'date'), reference: get(r, 'reference'), client: get(r, 'client'),
+    phone: get(r, 'phone'), service: get(r, 'service'), amount: rawanAmount(get(r, 'amount')),
+    payStatus: get(r, 'payStatus'), fileStatus: get(r, 'fileStatus'), payMethod: get(r, 'payMethod'),
+    leadSource: get(r, 'leadSource'), leadOutcome: get(r, 'leadOutcome'), notes: get(r, 'notes'),
+  })).filter(o => o.date || o.client || o.reference || o.phone || o.amount);
+}
+function rawanTop(rows, key) {
+  const m = {}; rows.forEach(r => { const v = (r[key] || '').trim(); if (v) m[v] = (m[v] || 0) + 1; });
+  let name = '', n = 0; for (const k in m) if (m[k] > n) { n = m[k]; name = k; }
+  return { name, n };
+}
+
 function rLeads() {
-  const box = document.getElementById('leadsBody'); if (!box) return;
-  if (!_rowanFetched) {
-    _rowanFetched = true;
-    box.innerHTML = '<div class="card"><div class="empty">Loading Rowan Daily Report…</div></div>';
-    fetch('/api/rowan', { cache: 'no-store' }).then(r => r.json()).then(j => { _rowan = j; rLeads(); }).catch(() => { _rowan = { connected: false, reason: 'source unreachable' }; rLeads(); });
+  const box = el('leadsBody'); if (!box) return;
+  if (!_rawanFetched) {
+    _rawanFetched = true;
+    box.innerHTML = '<div class="card"><div class="empty">Loading Rawan Daily Report…</div></div>';
+    fetch('/api/rawan', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => {
+        _rawan = j; _rawanErr = null; _rawanRows = null;
+        if (j && j.connected) { try { _rawanRows = rawanParse(j.csv); } catch (e) { _rawanErr = e.message || 'parse failed'; } }
+        rLeads();
+      })
+      .catch(e => { _rawan = { connected: false, reason: 'source unreachable' }; _rawanErr = e.message || 'fetch failed'; rLeads(); });
     return;
   }
-  if (!_rowan || !_rowan.connected) {
-    box.innerHTML = `<div class="card"><div class="rl-nc"><i class="ti ti-plug-connected-x"></i><div><div class="rl-nc-t">Rowan Daily Report — Not connected</div><div class="rl-nc-s">${esc((_rowan && _rowan.reason) || 'No Rowan source configured')}.</div></div></div>
-      <div class="set-help" style="margin-top:14px">Once the Rowan sheet is connected, this page will show — using <b>lead data only</b> (never counted as revenue):</div>
-      <ul class="rl-list">
-        <li>Lead summary cards: total Google/WhatsApp leads, matched/converted, Rowan-only, cancelled, no-response, price-issue, pending, unknown.</li>
-        <li>Reconciliation vs Main Transactions by <b>Reference/ATS №</b>, then <b>Phone</b>, then Name+Date.</li>
-        <li>Searchable review table (Date · Client · Phone · Service · Amount · Payment · File · Payment Method · Lead Source · Lead Outcome · Matched · Source Status · Ref № · Notes) with filters.</li>
-        <li>Market insight: lost-lead reasons, best-converting sources, payment-place usage (Cash / Bank Transfer / Payment Link / Cheque / Others / Diamond / Boston).</li>
-      </ul></div>`;
+  // fetch in flight (e.g. after "Sync now" reset _rawan) — show loading, not a false "not connected"
+  if (!_rawan) { box.innerHTML = '<div class="card"><div class="empty">Refreshing Rawan Daily Report…</div></div>'; return; }
+  // ---- honest states (no fake fallback data) ----
+  if (!_rawan || !_rawan.connected) {
+    const reason = (_rawan && _rawan.reason) || 'No Rawan source configured';
+    const isConfig = /not configured/i.test(reason);
+    box.innerHTML = `<div class="card"><div class="rl-nc"><i class="ti ti-plug-connected-x"></i><div>
+      <div class="rl-nc-t">${isConfig ? 'Rawan Daily Report — Not connected' : 'RAWAN FEED ERROR'}</div>
+      <div class="rl-nc-s">${esc(reason)}.</div></div></div></div>`;
     return;
   }
-  // Connected: minimal honest view until the column mapping/matching is verified against the live sheet.
-  box.innerHTML = `<div class="card"><div class="rc-row"><span>Rowan source</span><span class="rc-badge ok">Connected</span></div><div class="rc-row"><span>Fetched</span><span class="mono">${esc(_rowan.fetchedAt || '')}</span></div><div class="rc-note"><i class="ti ti-info-circle"></i> Source connected. Full lead reconciliation table &amp; insights will render once the column mapping is confirmed against the live sheet.</div></div>`;
+  if (_rawanErr) {
+    box.innerHTML = `<div class="card"><div class="rl-nc"><i class="ti ti-alert-triangle"></i><div>
+      <div class="rl-nc-t">RAWAN FEED ERROR</div>
+      <div class="rl-nc-s">Could not parse the published CSV: ${esc(_rawanErr)}.</div></div></div></div>`;
+    return;
+  }
+  const rows = _rawanRows || [];
+  if (!rows.length) {
+    box.innerHTML = `<div class="card"><div class="rl-nc"><i class="ti ti-database-off"></i><div>
+      <div class="rl-nc-t">NO DATA YET</div>
+      <div class="rl-nc-s">Rawan feed is connected but returned 0 rows.</div></div></div></div>`;
+    return;
+  }
+  // ---- summary cards (computed from ALL real rows) ----
+  const total = rows.length;
+  const totalAmt = rows.reduce((a, r) => a + r.amount, 0);
+  const cnt = re => rows.filter(re).length;
+  const google = cnt(r => /google/i.test(r.leadSource));
+  const cancelled = cnt(r => /cancel/i.test(r.leadOutcome) || /cancel/i.test(r.payStatus) || /cancel/i.test(r.fileStatus));
+  const paid = cnt(r => /paid/i.test(r.payStatus) && !/unpaid/i.test(r.payStatus));
+  const unpaid = cnt(r => /outstanding|unpaid|not paid/i.test(r.payStatus));
+  const pending = cnt(r => /pending/i.test(r.fileStatus));
+  const ts = rawanTop(rows, 'service'), tl = rawanTop(rows, 'leadSource');
+  const cards = [
+    kpi('Total Leads', NUM(total), 'rows in feed'),
+    kpi('Total Amount', AED(totalAmt), 'sum of Amount (AED)'),
+    kpi('Google Ads Leads', NUM(google), PCT(total ? google / total * 100 : 0) + ' of leads'),
+    kpi('Cancelled', NUM(cancelled), 'lead outcome', cancelled ? 'bad' : 'good'),
+    kpi('Paid / Unpaid', NUM(paid) + ' / ' + NUM(unpaid), 'payment status', unpaid ? 'warn' : 'good'),
+    kpi('Pending Files', NUM(pending), 'file status', pending ? 'warn' : 'good'),
+    kpi('Top Service', ts.n ? NUM(ts.n) : '—', ts.name || '—'),
+    kpi('Top Lead Source', tl.n ? NUM(tl.n) : '—', tl.name || '—'),
+  ];
+  const distinct = key => Array.from(new Set(rows.map(r => (r[key] || '').trim()).filter(Boolean))).sort();
+  const opts = (arr, sel) => ['<option value="">All</option>'].concat(arr.map(v => `<option${v === sel ? ' selected' : ''}>${esc(v)}</option>`)).join('');
+  const f = _rawanFilter;
+  const syncedTxt = _rawan.fetchedAt
+    ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dubai', dateStyle: 'medium', timeStyle: 'medium' }).format(new Date(_rawan.fetchedAt))
+    : '—';
+  box.innerHTML = `
+    <div class="card"><div class="kpi-strip">${cards.join('')}</div></div>
+    <div class="card">
+      <div class="rl-head">
+        <span class="rl-synced"><i class="ti ti-clock"></i> Last synced: <b id="rlSynced">${esc(syncedTxt)}</b> <span class="dimv">· Asia/Dubai</span></span>
+        <button class="rl-sync" onclick="syncRawan(true)" title="Force a fresh pull from the Rawan sheet"><i class="ti ti-refresh"></i> Sync Rawan</button>
+      </div>
+      <div class="rl-filters">
+        <input id="rlSearch" type="search" placeholder="Search client, phone, or reference…" value="${esc(f.q)}" oninput="_rawanFilter.q=this.value;rawanRenderTable()">
+        <select id="rlLead" onchange="_rawanFilter.lead=this.value;rawanRenderTable()">${opts(distinct('leadSource'), f.lead)}</select>
+        <select id="rlPay" onchange="_rawanFilter.pay=this.value;rawanRenderTable()">${opts(distinct('payStatus'), f.pay)}</select>
+        <select id="rlOutcome" onchange="_rawanFilter.outcome=this.value;rawanRenderTable()">${opts(distinct('leadOutcome'), f.outcome)}</select>
+        <span class="rl-count" id="rlCount"></span>
+      </div>
+      <div class="gscroll" id="rawanTableWrap"></div>
+      <div class="rl-note"><i class="ti ti-info-circle"></i><span>Live lead tracking only, <b>never counted as revenue</b> (Main Transactions stays the source of truth). Sheet header "Refrence Number" is shown as "Reference Number".</span></div>
+    </div>`;
+  rawanRenderTable();
+}
+// Force a fresh Rawan Daily Report pull (clears the client gate so /api/rawan is re-fetched —
+// the server adds a cache-buster so Google returns the latest published rows). Re-renders Leads if open.
+function syncRawan(notify) {
+  _rawanFetched = false; _rawan = null; _rawanRows = null; _rawanErr = null;
+  if (state.page === 'leads') rLeads();
+  if (notify) toast('Refreshing Rawan Daily Report…', 'good');
+}
+function rawanRenderTable() {
+  const wrap = el('rawanTableWrap'); if (!wrap || !_rawanRows) return;
+  const f = _rawanFilter, q = f.q.trim().toLowerCase();
+  const rows = _rawanRows.filter(r =>
+    (!q || (r.client + ' ' + r.phone + ' ' + r.reference).toLowerCase().includes(q)) &&
+    (!f.lead || r.leadSource === f.lead) &&
+    (!f.pay || r.payStatus === f.pay) &&
+    (!f.outcome || r.leadOutcome === f.outcome));
+  const headers = ['Date', 'Reference Number', 'Client Name', 'Phone Number', 'Service Type', 'Amount (AED)', 'Payment Status', 'File Status', 'Payment Method', 'Lead Source', 'Lead Outcome', 'Notes'];
+  const dash = v => v && v !== '0' ? esc(v) : '—';
+  const pill = v => v ? badge(String(v).trim().toLowerCase()) : '—';
+  const body = rows.map(r => [
+    esc(r.date) || '—', dash(r.reference), esc(r.client) || '—', dash(r.phone), esc(r.service) || '—',
+    `<span class="mono">${AED(r.amount)}</span>`, pill(r.payStatus), pill(r.fileStatus),
+    esc(r.payMethod) || '—', `<span style="color:${leadColor(r.leadSource)}">${esc(r.leadSource) || '—'}</span>`,
+    esc(r.leadOutcome) || '—', `<span title="${esc(r.notes)}">${esc(r.notes) || '—'}</span>`,
+  ]);
+  wrap.innerHTML = table(headers, body);
+  const c = el('rlCount'); if (c) c.textContent = 'Showing ' + rows.length + ' of ' + _rawanRows.length;
 }
 function rReports() {
   const v = state.data.view, k = v.kpis;
@@ -1438,7 +1619,7 @@ function bindPrefs() {
   });
   const rs = el('setReset'); if (rs) rs.addEventListener('click', () => {
     try { localStorage.removeItem(PREFS_KEY); localStorage.removeItem(VIEW_KEY); } catch (_) {}
-    document.body.classList.remove('compact');
+    document.body.classList.toggle('compact', PREF_DEFAULTS.density === 'compact');
     flashSaved('Reset to defaults');
     renderSettingsPrefs();
   });
@@ -1603,7 +1784,7 @@ async function load(fresh, notify) {
     }
   } catch (e) { console.error('[ATS] load error', e); el('loading').innerHTML = '<p style="color:var(--red)">Failed: ' + esc(e.message) + '</p>'; if (notify) toast('Sync failed: ' + e.message, 'bad'); }
 }
-el('syncNow').addEventListener('click', () => { logEvent('info', 'Sync now', 'Manual sync requested'); load(true, true); });
+el('syncNow').addEventListener('click', () => { logEvent('info', 'Sync now', 'Manual sync requested'); load(true, true); syncRawan(false); });
 // req #10+11: persist scroll position per page (sessionStorage), debounced
 let _scrollT; window.addEventListener('scroll', () => { clearTimeout(_scrollT); _scrollT = setTimeout(saveScroll, 150); }, { passive: true });
 restoreView();  // req #10+11: restore page/filters/tabs from the URL (or remembered/default) before first load
