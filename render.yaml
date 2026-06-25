@@ -30,7 +30,7 @@ services:
       #     value in the Render dashboard (Environment tab). sync:false keeps it
       #     OUT of git so no secret is ever committed. ---
       - key: DASHBOARD_USER
-        value: admin
+        value: atsadmin
       - key: DASHBOARD_PASSWORD
         sync: false            # set in Render dashboard; never committed
       - key: AUDIT_DIR        # forensic history persists on the disk below
