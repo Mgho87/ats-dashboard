@@ -1337,7 +1337,7 @@ function dlRenderDays() {
 
 /* ============ DATA MATCH / RECONCILIATION (hidden/internal, READ-ONLY) ============
    Compares Secretary/Sherry (view.sherryRecords) vs Rawan (_rawanRows). Never writes back. */
-var _dmFilter = { date:'', ats:'', client:'', phone:'', amount:'', service:'' };
+var _dmFilter = { q:'' };
 function dmNorm(s){ return String(s==null?'':s).trim().toLowerCase(); }
 function dmRef(s){ return String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,''); }
 function dmPhone(s){ const d = String(s==null?'':s).replace(/\D/g,''); return d.length>9?d.slice(-9):d; }
@@ -1382,6 +1382,31 @@ function dmDiffs(s,r){
   if((s.fileStatus||r.fileStatus)&&dmNorm(s.fileStatus)!==dmNorm(r.fileStatus)) d.push('File status: '+(s.fileStatus||'—')+' / '+(r.fileStatus||'—'));
   return d;
 }
+// Classify an UNCONVERTED Rawan lead (no Sherry payment) by its outcome → pending vs not-proceeded (+cancelled)
+function dmLeadState(r){
+  const t=((r.outcome||'')+' '+(r.status||'')+' '+(r.fileStatus||'')).toLowerCase();
+  if(/cancel|reject|declin|refus|\blost\b|not interest|no deal/.test(t)) return 'cancelled';
+  if(/pending|follow|await|waiting|in ?progress|\bnew\b|call ?back|later/.test(t)) return 'pending';
+  return 'notproceeded';   // no reply, asked price, whatsapp only, price issue, other, blank
+}
+function dmSetRange(kind){          // reuse the global date filter (Today/Yesterday/Last 7…)
+  const b=document.querySelector('#presets [data-range="'+kind+'"]');
+  document.querySelectorAll('#presets button').forEach(x=>x.classList.remove('active'));
+  if(b) b.classList.add('active');
+  state.filter.range=kind; const r=computeRange(kind); el('fFrom').value=r.from; el('fTo').value=r.to; applyFilter();
+}
+function dmBuckets(){               // classify matched pairs into the manager's daily buckets
+  const pairs=dmMatch(dmSherry(), dmRawan());
+  const b={ matched:[], different:[], sherryOnly:[], notProceeded:[], pending:[], cancelledN:0 };
+  pairs.forEach(p=>{
+    if(p.sherry&&p.rawan){ (dmDiffs(p.sherry,p.rawan).length?b.different:b.matched).push(p); }
+    else if(p.sherry){ b.sherryOnly.push(p); }
+    else if(p.rawan){ const st=dmLeadState(p.rawan);
+      if(st==='pending') b.pending.push(p);
+      else { b.notProceeded.push(p); if(st==='cancelled') b.cancelledN++; } }
+  });
+  return b;
+}
 function rDataMatch(){
   const box=el('dmBody'); if(!box) return;
   if(!_rawanFetched){
@@ -1392,71 +1417,78 @@ function rDataMatch(){
       if(state.page==='data-match') rDataMatch();
     }).catch(e=>{_rawan={connected:false,reason:'source unreachable'};_rawanErr=e.message;if(state.page==='data-match')rDataMatch();});
   }
-  const f=_dmFilter;
   box.innerHTML = `
-    ${(!_rawan||!_rawan.connected)?`<div class="callout" style="margin-bottom:10px"><i class="ti ti-plug-connected-x"></i> Rawan feed not connected${_rawan&&_rawan.reason?' ('+esc(_rawan.reason)+')':''} — matching runs against Secretary only.</div>`:''}
-    <div class="dm-kpis" id="dmKpis"></div>
-    <div class="dm-filters">
-      <input id="dmDate" type="date" value="${esc(f.date)}" oninput="_dmFilter.date=this.value;dmRender()" title="Date">
-      <input type="search" placeholder="ATS number…" value="${esc(f.ats)}" oninput="_dmFilter.ats=this.value;dmRender()">
-      <input type="search" placeholder="Client name…" value="${esc(f.client)}" oninput="_dmFilter.client=this.value;dmRender()">
-      <input type="search" placeholder="Phone…" value="${esc(f.phone)}" oninput="_dmFilter.phone=this.value;dmRender()">
-      <input type="search" placeholder="Amount…" value="${esc(f.amount)}" oninput="_dmFilter.amount=this.value;dmRender()">
-      <input type="search" placeholder="Service…" value="${esc(f.service)}" oninput="_dmFilter.service=this.value;dmRender()">
-      <button class="dm-clear" onclick="_dmFilter={date:'',ats:'',client:'',phone:'',amount:'',service:''};rDataMatch()"><i class="ti ti-filter-off"></i> Clear filters</button>
+    ${(!_rawan||!_rawan.connected)?`<div class="callout" style="margin-bottom:10px"><i class="ti ti-plug-connected-x"></i> Rawan feed not connected${_rawan&&_rawan.reason?' ('+esc(_rawan.reason)+')':''} — lead outcomes need the Rawan sheet.</div>`:''}
+    <div class="dl-quick">
+      <button onclick="dmSetRange('today')">Today</button>
+      <button onclick="dmSetRange('yesterday')">Yesterday</button>
+      <button onclick="dmSetRange('7')">Last 7 Days</button>
+      <button onclick="dmSetRange('30')">Last 30</button>
+      <button onclick="dmSetRange('all')">All</button>
+      <span class="dl-range" id="dmRange"></span>
     </div>
-    <div id="dmRows"></div>`;
+    <input class="dm-search" type="search" placeholder="Search client or phone…" value="${esc(_dmFilter.q)}" oninput="_dmFilter.q=this.value;dmRender()">
+    <div class="dm-kpis" id="dmKpis"></div>
+    <div id="dmSections"></div>`;
+  const rl=el('dmRange'); if(rl) rl.textContent=computeRange(state.filter.range).label;
   dmRender();
 }
 function dmRender(){
-  const sher=dmSherry(), raw=dmRawan();
-  const pairs=dmMatch(sher, raw);
-  const exact=pairs.filter(p=>p.conf==='exact').length, poss=pairs.filter(p=>p.conf==='possible').length;
-  const missR=pairs.filter(p=>p.conf==='sherry-only').length, missS=pairs.filter(p=>p.conf==='rawan-only').length;
-  const withDiff=pairs.filter(p=>p.sherry&&p.rawan&&dmDiffs(p.sherry,p.rawan).length).length;
-  const amtDiff=pairs.filter(p=>p.sherry&&p.rawan).reduce((a,p)=>a+Math.abs(p.sherry.amount-p.rawan.amount),0);
-  const K=(l,v,t)=>`<div class="dm-kpi ${t||''}"><div class="dm-kpi-l">${l}</div><div class="dm-kpi-v mono">${v}</div></div>`;
+  const b=dmBuckets();
+  const rawanTotal=dmRawan().length, matchedN=b.matched.length+b.different.length;
+  const K=(l,v,t)=>`<div class="dm-kpi ${t||''}"><div class="dm-kpi-l">${l}</div><div class="dm-kpi-v mono">${NUM(v)}</div></div>`;
   const kh=el('dmKpis'); if(kh) kh.innerHTML=[
-    K('Sherry records',NUM(sher.length)), K('Rawan records',NUM(raw.length)),
-    K('Exact matches',NUM(exact),'good'), K('Possible matches',NUM(poss),'warn'),
-    K('Missing in Rawan',NUM(missR),missR?'bad':''), K('Missing in Sherry',NUM(missS),missS?'bad':''),
-    K('With differences',NUM(withDiff),withDiff?'warn':''), K('Total amount diff',AEDk(amtDiff),amtDiff>0.01?'bad':'good'),
+    K('Rawan total leads',rawanTotal),
+    K('Paid / matched',matchedN,'good'),
+    K('Paid, missing in Rawan',b.sherryOnly.length,b.sherryOnly.length?'bad':''),
+    K('Not paid / not proceeded',b.notProceeded.length,'warn'),
+    K('Pending follow-up',b.pending.length,b.pending.length?'info':''),
+    K('Cancelled / rejected',b.cancelledN,b.cancelledN?'bad':''),
+    K('With differences',b.different.length,b.different.length?'warn':''),
   ].join('');
-  const f=_dmFilter;
-  const inc=(a,b)=>String(a||'').includes(String(b||''));
-  const F=p=>{ const s=p.sherry,r=p.rawan;
-    const any=(fn)=>[s&&fn(s),r&&fn(r)].some(Boolean);
-    return (!f.ats||any(x=>dmRef(x.ref).includes(dmRef(f.ats))))
-      && (!f.client||any(x=>dmNorm(x.client).includes(dmNorm(f.client))))
-      && (!f.phone||any(x=>dmDigits(x.phone).includes(dmDigits(f.phone))))
-      && (!f.date||any(x=>inc(x.date,f.date)))
-      && (!f.amount||any(x=>inc(x.amount,f.amount.trim())))
-      && (!f.service||any(x=>dmNorm(x.service).includes(dmNorm(f.service))));
-  };
-  const shown=pairs.filter(F);
-  const host=el('dmRows'); if(!host) return;
-  if(!shown.length){ host.innerHTML='<div class="card"><div class="empty">No records match these filters</div></div>'; return; }
-  host.innerHTML = shown.slice(0,400).map(dmPairCard).join('') + (shown.length>400?`<div class="dm-note">Showing first 400 of ${NUM(shown.length)} — narrow with filters.</div>`:'');
+  const q=_dmFilter.q.trim().toLowerCase();
+  const flt=arr=>!q?arr:arr.filter(p=>{ const s=p.sherry,r=p.rawan; const hay=[s&&s.client,r&&r.client,s&&s.phone,r&&r.phone].map(x=>String(x||'')).join(' ').toLowerCase(); return hay.includes(q)||dmDigits(hay).includes(dmDigits(q)); });
+  const sec=(ic,title,cls,arr,render,openIt)=>{ const a=flt(arr);
+    return `<details class="dm-sec ${cls}"${openIt&&a.length?' open':''}><summary><span class="dm-sec-ic">${ic}</span><span class="dm-sec-t">${title}</span><span class="dm-sec-n">${a.length}</span></summary><div class="dm-sec-body">${a.length?a.slice(0,300).map(render).join('')+(a.length>300?`<div class="dm-note">Showing 300 of ${NUM(a.length)} — narrow with search</div>`:''):'<div class="dm-empty">None</div>'}</div></details>`; };
+  const host=el('dmSections'); if(!host) return;
+  host.innerHTML =
+    sec('✅','Paid &amp; Matched','dm-good', b.matched, dmMatchedCard, false) +
+    sec('⚠️','Paid But Different','dm-warn', b.different, dmMatchedCard, true) +
+    sec('🔴','Paid in Sherry, Missing in Rawan','dm-bad', b.sherryOnly, dmSherryOnlyCard, true) +
+    sec('🟡','Rawan Leads — Not Paid / Not Proceeded','dm-warn', b.notProceeded, dmLeadCard, true) +
+    sec('🔵','Pending Follow-up','dm-info', b.pending, dmLeadCard, false);
 }
-function dmFieldRow(label,sVal,rVal,diff){
-  return `<div class="dm-f${diff?' dm-diff':''}"><span class="dm-f-l">${label}</span><span class="dm-f-s">${sVal!=null&&sVal!==''?esc(sVal):'—'}</span><span class="dm-f-r">${rVal!=null&&rVal!==''?esc(rVal):'—'}</span></div>`;
+function dmKV(label,val,strong){ return `<div class="dm-kv"><span>${label}</span><b class="${strong||''}">${val!=null&&val!==''?esc(val):'—'}</b></div>`; }
+function dmMatchedCard(p){
+  const s=p.sherry,r=p.rawan, diffs=dmDiffs(s,r);
+  return `<details class="dm-lc">
+    <summary><span class="dm-lc-name">${esc(s.client||r.client||'—')}</span><span class="dm-lc-amt mono">${AED(s.amount)}</span><span class="pill ${diffs.length?'warn':'good'}">${diffs.length?'Different':'Matched'}</span></summary>
+    <div class="dm-lc-body">
+      ${dmKV('ATS №', s.ref||r.ref)}${dmKV('Date', s.date||r.date)}${dmKV('Phone', s.phone||r.phone)}${dmKV('Service', s.service)}
+      ${dmKV('Sherry amount', AED(s.amount))}${dmKV('Rawan amount', AED(r.amount), Math.abs(s.amount-r.amount)>0.01?'bad-txt':'')}
+      ${dmKV('Sherry payment', s.status)}${dmKV('Rawan outcome', r.outcome)}${dmKV('Lead source', r.lead)}
+      ${diffs.length?`<div class="dm-diffs"><div class="dm-diffs-h">Differences</div>${diffs.map(x=>`<div class="dm-diff-item"><i class="ti ti-alert-triangle"></i> ${esc(x)}</div>`).join('')}</div>`:''}
+    </div></details>`;
 }
-function dmPairCard(p){
-  const s=p.sherry, r=p.rawan;
-  const cm={exact:{c:'good',t:'Exact match'},possible:{c:'warn',t:'Possible match · '+esc(p.by||'')},'sherry-only':{c:'bad',t:'Missing in Rawan'},'rawan-only':{c:'bad',t:'Missing in Sherry'}}[p.conf]||{c:'neutral',t:p.conf};
-  const diffs=dmDiffs(s,r);
-  const F=(label,key)=>{ const sv=s?(s[key]||''):''; const rv=r?(r[key]||''):''; const diff=s&&r&&(sv||rv)&&dmNorm(sv)!==dmNorm(rv); return dmFieldRow(label,sv,rv,diff); };
-  const amtDiff=s&&r&&Math.abs(s.amount-r.amount)>0.01;
-  return `<div class="dm-card dm-${cm.c}">
-    <div class="dm-head"><span class="dm-badge ${cm.c}">${cm.t}</span><span class="dm-ats mono">${esc((s&&s.ref)||(r&&r.ref)||'—')}</span></div>
-    <div class="dm-cols-h"><span></span><span class="dm-h-s">Sherry</span><span class="dm-h-r">Rawan</span></div>
-    ${F('ATS №','ref')}${F('Date','date')}${F('Client','client')}${F('Phone','phone')}${F('Service','service')}
-    ${dmFieldRow('Amount', s?AED(s.amount):'', r?AED(r.amount):'', amtDiff)}
-    ${F('Payment','status')}${F('File','fileStatus')}${F('Method','method')}${F('Lead','lead')}${F('Notes','notes')}
-    ${diffs.length?`<div class="dm-diffs"><div class="dm-diffs-h">Differences</div>${diffs.map(x=>`<div class="dm-diff-item"><i class="ti ti-alert-triangle"></i> ${esc(x)}</div>`).join('')}</div>`:''}
-    ${p.conf==='sherry-only'?`<div class="dm-diffs"><div class="dm-diff-item"><i class="ti ti-alert-triangle"></i> Record exists in Sherry but missing in Rawan</div></div>`:''}
-    ${p.conf==='rawan-only'?`<div class="dm-diffs"><div class="dm-diff-item"><i class="ti ti-alert-triangle"></i> Record exists in Rawan but missing in Sherry</div></div>`:''}
-  </div>`;
+function dmSherryOnlyCard(p){
+  const s=p.sherry;
+  return `<details class="dm-lc">
+    <summary><span class="dm-lc-name">${esc(s.client||'—')}</span><span class="dm-lc-amt mono">${AED(s.amount)}</span><span class="pill bad">No lead in Rawan</span></summary>
+    <div class="dm-lc-body">
+      ${dmKV('ATS №', s.ref)}${dmKV('Date', s.date)}${dmKV('Phone', s.phone)}${dmKV('Service', s.service)}${dmKV('Payment', s.status)}${dmKV('Method', s.method)}
+      <div class="dm-diffs"><div class="dm-diff-item"><i class="ti ti-alert-triangle"></i> Paid in Sherry but no matching lead recorded in Rawan.</div></div>
+    </div></details>`;
+}
+function dmLeadCard(p){
+  const r=p.rawan, st=dmLeadState(r);
+  const tone= st==='cancelled'?'bad':(st==='pending'?'info':'warn');
+  return `<details class="dm-lc">
+    <summary><span class="dm-lc-name">${esc(r.client||'—')}</span><span class="dm-outcome ${tone}">${esc(r.outcome||r.status||'no outcome')}</span></summary>
+    <div class="dm-lc-body">
+      ${dmKV('Phone', r.phone)}${dmKV('Service', r.service)}${dmKV('Amount', r.amount?AED(r.amount):'')}
+      ${dmKV('Lead outcome', r.outcome, 'strong')}${dmKV('Payment status', r.status)}${dmKV('File status', r.fileStatus)}
+      ${dmKV('Lead source', r.lead)}${dmKV('Notes', r.notes)}
+    </div></details>`;
 }
 function rReports() {
   const v = state.data.view, k = v.kpis;
