@@ -344,6 +344,12 @@
         <div id="dlBody"></div>
       </section>
 
+      <!-- ============ DATA MATCH / RECONCILIATION (hidden/internal — no sidebar item; ?page=data-match) ============ -->
+      <section class="page" id="page-data-match">
+        <div class="page-head"><div><h1>Data Match / Reconciliation</h1><p>Internal tool · read-only — Secretary/Sherry (main sheet) ⇄ Rawan matching</p></div></div>
+        <div id="dmBody"></div>
+      </section>
+
       <!-- ============ REPORTS ============ -->
       <section class="page" id="page-reports">
         <div class="page-head"><div><h1>Reporting Center</h1><p>Use this page to export filtered business reports based on the selected date range.</p></div>
@@ -509,6 +515,10 @@
         <div class="card"><h4><i class="ti ti-shield-lock"></i> SETTINGS PROTECTION — VALUES NOT IN SETTINGS</h4>
           <div class="callout"><i class="ti ti-info-circle"></i> The dashboard never auto-creates categories. Any value found in the sheet but <b>not defined in the Settings tab</b> is highlighted, reported and logged below — add it to the Settings sheet to make it official.</div>
           <div id="setUnknown" class="mini-table"></div>
+        </div>
+        <div class="card"><h4><i class="ti ti-tool"></i> INTERNAL TOOLS</h4>
+          <div class="set-help">Read-only reconciliation utilities (internal use — not in the main menu).</div>
+          <button class="dm-open" data-page="data-match"><i class="ti ti-git-compare"></i> Open Data Match / Reconciliation</button>
         </div>
       </section>
 
