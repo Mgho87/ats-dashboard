@@ -246,25 +246,6 @@ if (window.Chart) {
     Object.assign(Chart.defaults.plugins.tooltip, { backgroundColor: 'rgba(11,15,28,.95)', borderColor: '#2C375A', borderWidth: 1, padding: 10, cornerRadius: 8, boxPadding: 5, titleColor: '#FFFFFF', bodyColor: '#EAEEF8', usePointStyle: true });
     Chart.defaults.plugins.legend.labels.usePointStyle = true;
     Chart.defaults.plugins.legend.labels.pointStyle = 'circle';
-    // Donut/pie tooltip placement (global): anchor the tooltip on the OUTER EDGE of the hovered
-    // slice (radially outward) so it never covers the center TOTAL / % label. Works for desktop
-    // hover, iPad tap and mobile tap. Non-arc charts (line/bar) fall back to the default average.
-    if (Chart.Tooltip && Chart.Tooltip.positioners) {
-      Chart.Tooltip.positioners.donutEdge = function (items, eventPos) {
-        if (!items || !items.length) return eventPos || false;
-        const e = items[0].element;
-        if (e && typeof e.outerRadius === 'number' && typeof e.startAngle === 'number') {
-          const ang = (e.startAngle + e.endAngle) / 2;      // mid-angle of the slice
-          const r = e.outerRadius + 2;                       // just outside the ring (clear of center)
-          return { x: e.x + Math.cos(ang) * r, y: e.y + Math.sin(ang) * r };
-        }
-        let x = 0, y = 0, n = 0;                             // line/bar: average of active points
-        for (const it of items) { const p = it.element.tooltipPosition(); x += p.x; y += p.y; n++; }
-        return n ? { x: x / n, y: y / n } : (eventPos || false);
-      };
-      Chart.defaults.plugins.tooltip.position = 'donutEdge';
-      Chart.defaults.plugins.tooltip.caretPadding = 6;       // small gap so the box clears the arc
-    }
   } catch (e) {}
 }
 function draw(id, cfg) {
@@ -435,7 +416,7 @@ function renderChrome() {
 }
 
 function renderPage(page) {
-  ({ overview: rOverview, money: rMoney, collection: rCollection, office: rOffice, pipeline: () => { rPipeline(); rOps(); }, operations: () => { rPipeline(); rOps(); }, clients: rClients, google: rGoogle, leads: rLeads, reports: rReports, audit: rAudit, health: rHealth, settings: rSettings }[page] || (() => {}))();
+  ({ overview: rOverview, money: rMoney, collection: rCollection, office: rOffice, pipeline: () => { rPipeline(); rOps(); }, operations: () => { rPipeline(); rOps(); }, clients: rClients, google: rGoogle, leads: rLeads, daily: rDaily, reports: rReports, audit: rAudit, health: rHealth, settings: rSettings }[page] || (() => {}))();
   balanceKpiRows();
 }
 // Balanced KPI rows: choose a column count from BOTH the card count and the viewport width,
@@ -657,7 +638,8 @@ function rOffice(){
   draw('officeTrend',{type:'bar',data:{labels:(op.monthlyTrend||[]).map(t=>t.label),datasets:[{data:(op.monthlyTrend||[]).map(t=>t.amount),backgroundColor:'#F0616A',borderRadius:6,maxBarThickness:38}]},options:axis(true)});
   el('officeTable').innerHTML=table(['Date','Category','Method','Status','Amount'],(op.recent||[]).map(p=>[esc(p.date),esc(p.category),esc(p.method||'—'),esc(p.status||'—'),AED(p.amount)]));
 }
-function healthRow(l, v, tone) { return `<div class="hr"><span class="hr-l">${l}</span><span class="hr-v mono">${v}</span><span class="dot ${tone}"></span></div>`; }
+function healthRow(l, v, tone) {
+ return `<div class="hr"><span class="hr-l">${l}</span><span class="hr-v mono">${v}</span><span class="dot ${tone}"></span></div>`; }
 
 /* ---------------- TOP OPPORTUNITIES CENTER (req #4) ---------------- */
 const OPP_TABS = [
@@ -932,7 +914,7 @@ function rGoogle() {
   const attrLine = attr.complete
     ? `All ${NUM(attr.totalOrders)} orders carry a Lead Source tag — attribution is complete.`
     : `<b>Attribution may be incomplete:</b> ${NUM(attr.untaggedOrders)} of ${NUM(attr.totalOrders)} orders have <b>no Lead Source tag</b> (${PCT(attr.taggedShare)} tagged). Untagged orders are <b>not</b> allocated to Google Ads or other sources — treat these figures as directional.`;
-  const note = el('gNote'); note.hidden = true; note.innerHTML = '';   // note banner removed (clean Google Ads page); real errors still use errorBanner/Audit Log
+  const note = el('gNote'); note.hidden = false;
   const base = `<i class="ti ti-info-circle"></i> <b>Based on tagged Lead Source = "Google Ads"</b> (directional attribution). `;
   if (noSpend) { note.className = 'callout warn'; note.innerHTML = base + `<b>No Google Ads spend recorded for this period</b> — ROAS &amp; CPA need an Expenses "Google Ads" row. Revenue &amp; orders above are real, attributed from tagged Lead Source. <br>${attrLine}`; }
   else { note.className = 'callout' + (attr.complete ? '' : ' warn'); note.innerHTML = base + `Spend from Expenses "Google Ads"; score = ROAS + CPA + conversion. ROAS ${g.roas.toFixed(2)}x · CPA ${AED(g.cpa)} · conversion ${PCT(g.conversionRate)}. <br>${attrLine}`; }
@@ -1144,8 +1126,6 @@ function rLeads() {
       .catch(e => { _rawan = { connected: false, reason: 'source unreachable' }; _rawanErr = e.message || 'fetch failed'; rLeads(); });
     return;
   }
-  // fetch in flight (e.g. after "Sync now" reset _rawan) — show loading, not a false "not connected"
-  if (!_rawan) { box.innerHTML = '<div class="card"><div class="empty">Refreshing Rawan Daily Report…</div></div>'; return; }
   // ---- honest states (no fake fallback data) ----
   if (!_rawan || !_rawan.connected) {
     const reason = (_rawan && _rawan.reason) || 'No Rawan source configured';
@@ -1191,16 +1171,9 @@ function rLeads() {
   const distinct = key => Array.from(new Set(rows.map(r => (r[key] || '').trim()).filter(Boolean))).sort();
   const opts = (arr, sel) => ['<option value="">All</option>'].concat(arr.map(v => `<option${v === sel ? ' selected' : ''}>${esc(v)}</option>`)).join('');
   const f = _rawanFilter;
-  const syncedTxt = _rawan.fetchedAt
-    ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dubai', dateStyle: 'medium', timeStyle: 'medium' }).format(new Date(_rawan.fetchedAt))
-    : '—';
   box.innerHTML = `
     <div class="card"><div class="kpi-strip">${cards.join('')}</div></div>
     <div class="card">
-      <div class="rl-head">
-        <span class="rl-synced"><i class="ti ti-clock"></i> Last synced: <b id="rlSynced">${esc(syncedTxt)}</b> <span class="dimv">· Asia/Dubai</span></span>
-        <button class="rl-sync" onclick="syncRawan(true)" title="Force a fresh pull from the Rawan sheet"><i class="ti ti-refresh"></i> Sync Rawan</button>
-      </div>
       <div class="rl-filters">
         <input id="rlSearch" type="search" placeholder="Search client, phone, or reference…" value="${esc(f.q)}" oninput="_rawanFilter.q=this.value;rawanRenderTable()">
         <select id="rlLead" onchange="_rawanFilter.lead=this.value;rawanRenderTable()">${opts(distinct('leadSource'), f.lead)}</select>
@@ -1209,16 +1182,9 @@ function rLeads() {
         <span class="rl-count" id="rlCount"></span>
       </div>
       <div class="gscroll" id="rawanTableWrap"></div>
-      <div class="rl-note"><i class="ti ti-info-circle"></i><span>Live lead tracking only, <b>never counted as revenue</b> (Main Transactions stays the source of truth). Sheet header "Refrence Number" is shown as "Reference Number".</span></div>
+      <div class="rl-note"><i class="ti ti-info-circle"></i><span><b>Rawan Daily Report connected — reconciliation not started yet.</b> Live lead tracking only, <b>never counted as revenue</b>. Sheet header "Refrence Number" is shown as "Reference Number".</span></div>
     </div>`;
   rawanRenderTable();
-}
-// Force a fresh Rawan Daily Report pull (clears the client gate so /api/rawan is re-fetched —
-// the server adds a cache-buster so Google returns the latest published rows). Re-renders Leads if open.
-function syncRawan(notify) {
-  _rawanFetched = false; _rawan = null; _rawanRows = null; _rawanErr = null;
-  if (state.page === 'leads') rLeads();
-  if (notify) toast('Refreshing Rawan Daily Report…', 'good');
 }
 function rawanRenderTable() {
   const wrap = el('rawanTableWrap'); if (!wrap || !_rawanRows) return;
@@ -1239,6 +1205,134 @@ function rawanRenderTable() {
   ]);
   wrap.innerHTML = table(headers, body);
   const c = el('rlCount'); if (c) c.textContent = 'Showing ' + rows.length + ' of ' + _rawanRows.length;
+}
+
+/* ============ DAILY LEADS (mobile-first) — Sherry (main sheet) vs Rawan, day by day ============
+   Read-only view over existing sources: Sherry = view.sherryRecords (Main Transactions, official),
+   Rawan = _rawanRows (Rawan Daily Report, lead-tracking only — NEVER counted as official revenue). */
+var _dlFilter = { source: 'all', pay: '', file: '', lead: '', q: '' };
+const _DL_MON = { jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12' };
+function rawanDateKey(s) {
+  const v = String(s == null ? '' : s).trim();
+  let m = v.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = v.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,})[-\/\s](\d{2,4})$/);            // 17-Jun-2026
+  if (m) { const mm = _DL_MON[m[2].slice(0,3).toLowerCase()]; if (mm) { const y = m[3].length===2?'20'+m[3]:m[3]; return y+'-'+mm+'-'+String(m[1]).padStart(2,'0'); } }
+  m = v.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/);                     // 17/06/2026 (D/M/Y)
+  if (m) { const y = m[3].length===2?'20'+m[3]:m[3]; return y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0'); }
+  return '';
+}
+function dlFmtDate(dk) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dk || ''); if (!m) return dk || '—';
+  const d = new Date(+m[1], +m[2]-1, +m[3]); if (isNaN(d)) return dk;
+  return d.toLocaleDateString('en-GB', { weekday:'short', day:'2-digit', month:'long', year:'numeric' });
+}
+function dlSetRange(kind) {                                                   // reuse the global date filter
+  const b = document.querySelector('#presets [data-range="'+kind+'"]');
+  document.querySelectorAll('#presets button').forEach(x => x.classList.remove('active'));
+  if (b) b.classList.add('active');
+  state.filter.range = kind;
+  const r = computeRange(kind); el('fFrom').value = r.from; el('fTo').value = r.to;
+  applyFilter();
+}
+function dlAllRecords() {
+  const view = (state.data && state.data.view) || {};
+  const sherry = (view.sherryRecords || []).map(r => ({
+    source:'sherry', dateKey:r.date, client:r.client||'', phone:r.phone||'', service:r.service||'',
+    amount:+r.amount||0, status:r.status||'', fileStatus:r.fileStatus||'', lead:r.lead||'', outcome:'', notes:r.notes||''
+  }));
+  const from = state.filter.from, to = state.filter.to;
+  const rawan = (_rawanRows || []).map(r => ({
+    source:'rawan', dateKey:rawanDateKey(r.date), client:r.client||'', phone:r.phone||'', service:r.service||'',
+    amount:+r.amount||0, status:r.payStatus||'', fileStatus:r.fileStatus||'', lead:r.leadSource||'', outcome:r.leadOutcome||'', notes:r.notes||''
+  })).filter(r => r.dateKey && (!from || r.dateKey >= from) && (!to || r.dateKey <= to));
+  return sherry.concat(rawan);
+}
+function rDaily() {
+  const box = el('dlBody'); if (!box) return;
+  if (!_rawanFetched) {                                                      // lazy-load Rawan (shared with Leads Review)
+    _rawanFetched = true;
+    fetch('/api/rawan', { cache:'no-store' }).then(r => r.json()).then(j => {
+      _rawan = j; _rawanErr = null; _rawanRows = null;
+      if (j && j.connected) { try { _rawanRows = rawanParse(j.csv); } catch(e){ _rawanErr = e.message; } }
+      if (state.page === 'daily') rDaily();
+    }).catch(e => { _rawan = {connected:false,reason:'source unreachable'}; _rawanErr = e.message; if (state.page==='daily') rDaily(); });
+  }
+  const all = dlAllRecords();
+  const uniqSorted = key => Array.from(new Set(all.map(r => r[key]).filter(Boolean))).sort();
+  const f = _dlFilter;
+  const opt = (arr, sel) => ['<option value="">All</option>'].concat(arr.map(v=>`<option${v===sel?' selected':''}>${esc(v)}</option>`)).join('');
+  const rawanNote = (!_rawan || !_rawan.connected)
+    ? `<div class="callout" style="margin-bottom:10px"><i class="ti ti-plug-connected-x"></i> Rawan feed not connected${_rawan&&_rawan.reason?' ('+esc(_rawan.reason)+')':''} — showing <b>Sherry</b> (main sheet) only.</div>` : '';
+  box.innerHTML = `
+    ${rawanNote}
+    <div class="dl-quick">
+      <button onclick="dlSetRange('today')">Today</button>
+      <button onclick="dlSetRange('yesterday')">Yesterday</button>
+      <button onclick="dlSetRange('7')">Last 7 Days</button>
+      <button onclick="dlSetRange('30')">Last 30</button>
+      <button onclick="dlSetRange('all')">All</button>
+      <span class="dl-range" id="dlRange"></span>
+    </div>
+    <div class="dl-filters">
+      <input id="dlSearch" type="search" placeholder="Search name or phone…" value="${esc(f.q)}" oninput="_dlFilter.q=this.value;dlRenderDays()">
+      <select onchange="_dlFilter.source=this.value;dlRenderDays()">
+        <option value="all"${f.source==='all'?' selected':''}>All sources</option>
+        <option value="sherry"${f.source==='sherry'?' selected':''}>Sherry only</option>
+        <option value="rawan"${f.source==='rawan'?' selected':''}>Rawan only</option>
+      </select>
+      <select onchange="_dlFilter.pay=this.value;dlRenderDays()">${opt(uniqSorted('status'),f.pay)}</select>
+      <select onchange="_dlFilter.file=this.value;dlRenderDays()">${opt(uniqSorted('fileStatus'),f.file)}</select>
+      <select onchange="_dlFilter.lead=this.value;dlRenderDays()">${opt(uniqSorted('lead'),f.lead)}</select>
+    </div>
+    <div id="dlDays"></div>`;
+  const rl = el('dlRange'); if (rl) rl.textContent = computeRange(state.filter.range).label;
+  dlRenderDays();
+}
+function dlCard(r) {
+  const st = (r.status||'').trim();
+  const pill = st ? badge(st.toLowerCase()) : '<span class="pill neutral">—</span>';
+  const srcCls = r.source === 'sherry' ? 'dl-src-sherry' : 'dl-src-rawan';
+  const row = (label, val) => `<div class="dl-kv"><span>${label}</span><b>${val ? esc(val) : '—'}</b></div>`;
+  return `<details class="dl-c">
+    <summary><span class="dl-c-name">${esc(r.client||'—')}</span><span class="dl-c-amt mono">${AED(r.amount)}</span>${pill}<span class="dl-src ${srcCls}">${r.source==='sherry'?'Sherry':'Rawan'}</span></summary>
+    <div class="dl-c-body">
+      ${row('Phone', r.phone)}${row('Service', r.service)}${row('File status', r.fileStatus)}${row('Lead source', r.lead)}${r.source==='rawan'?row('Lead outcome', r.outcome):''}${row('Notes', r.notes)}
+    </div></details>`;
+}
+function dlRenderDays() {
+  const host = el('dlDays'); if (!host) return;
+  const f = _dlFilter, q = f.q.trim().toLowerCase();
+  const match = r =>
+    (f.source==='all' || r.source===f.source) &&
+    (!f.pay || r.status===f.pay) && (!f.file || r.fileStatus===f.file) && (!f.lead || r.lead===f.lead) &&
+    (!q || (r.client+' '+r.phone).toLowerCase().includes(q));
+  const recs = dlAllRecords().filter(match);
+  const days = {};
+  recs.forEach(r => { (days[r.dateKey] = days[r.dateKey] || {sherry:[],rawan:[]})[r.source].push(r); });
+  const keys = Object.keys(days).sort().reverse();
+  if (!keys.length) { host.innerHTML = '<div class="card"><div class="empty">No leads for this range / filters</div></div>'; return; }
+  const money = arr => arr.reduce((a,r)=> a + (/cancel/i.test(r.status)?0:r.amount), 0);
+  const paidN = arr => arr.filter(r=>/paid/i.test(r.status) && !/unpaid/i.test(r.status)).length;
+  const unpaidN = arr => arr.filter(r=>/outstanding|unpaid|pending|not paid|partial/i.test(r.status)).length;
+  host.innerHTML = keys.map(dk => {
+    const d = days[dk], sh = d.sherry, rw = d.rawan, all = sh.concat(rw);
+    const col = (arr, empty) => arr.length ? arr.map(dlCard).join('') : `<div class="dl-empty">${empty}</div>`;
+    return `<div class="dl-day">
+      <div class="dl-date"><i class="ti ti-calendar"></i> ${dlFmtDate(dk)}</div>
+      <div class="dl-sum">
+        <span class="dl-chip">Total <b>${all.length}</b></span>
+        <span class="dl-chip dl-s">Sherry <b>${sh.length}</b></span>
+        <span class="dl-chip dl-r">Rawan <b>${rw.length}</b></span>
+        <span class="dl-chip">Sherry <b>${AEDk(money(sh))}</b></span>
+        <span class="dl-chip">Rawan <b>${AEDk(money(rw))}</b><small> leads</small></span>
+        <span class="dl-chip">Paid <b>${paidN(all)}</b> / Unpaid <b>${unpaidN(all)}</b></span>
+      </div>
+      <div class="dl-cols">
+        <div class="dl-col"><div class="dl-col-h dl-s-h">Sherry · ${sh.length}</div>${col(sh,'No Sherry clients')}</div>
+        <div class="dl-col"><div class="dl-col-h dl-r-h">Rawan · ${rw.length}</div>${col(rw,'No Rawan clients')}</div>
+      </div>
+    </div>`;
+  }).join('');
 }
 function rReports() {
   const v = state.data.view, k = v.kpis;
@@ -1784,7 +1878,7 @@ async function load(fresh, notify) {
     }
   } catch (e) { console.error('[ATS] load error', e); el('loading').innerHTML = '<p style="color:var(--red)">Failed: ' + esc(e.message) + '</p>'; if (notify) toast('Sync failed: ' + e.message, 'bad'); }
 }
-el('syncNow').addEventListener('click', () => { logEvent('info', 'Sync now', 'Manual sync requested'); load(true, true); syncRawan(false); });
+el('syncNow').addEventListener('click', () => { logEvent('info', 'Sync now', 'Manual sync requested'); load(true, true); });
 // req #10+11: persist scroll position per page (sessionStorage), debounced
 let _scrollT; window.addEventListener('scroll', () => { clearTimeout(_scrollT); _scrollT = setTimeout(saveScroll, 150); }, { passive: true });
 restoreView();  // req #10+11: restore page/filters/tabs from the URL (or remembered/default) before first load

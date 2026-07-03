@@ -304,6 +304,42 @@ body.light .exec-card{background:linear-gradient(160deg,#eef2fb,#fff)}
 .rl-sync{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line2);color:var(--text);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;transition:border-color .14s,background .14s}
 .rl-sync:hover{border-color:var(--accent);background:var(--panel2)}
 .rl-sync i{font-size:14px;color:var(--accent)}
+/* ===== Daily Leads (mobile-first): Sherry vs Rawan, day by day ===== */
+.dl-quick{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin:0 0 10px}
+.dl-quick button{background:var(--panel);border:1px solid var(--line2);color:var(--text);border-radius:20px;padding:6px 13px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer}
+.dl-quick button:hover{border-color:var(--accent)}
+.dl-range{font-size:11.5px;color:var(--dim);margin-left:auto}
+.dl-filters{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 12px}
+.dl-filters input{grid-column:1/-1}
+.dl-filters input,.dl-filters select{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:8px 10px;font-size:12px;font-family:inherit;outline:none}
+.dl-filters input:focus,.dl-filters select:focus{border-color:var(--accent)}
+.dl-day{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px;margin-bottom:12px;box-shadow:var(--shadow)}
+.dl-date{font-size:14px;font-weight:800;display:flex;align-items:center;gap:7px;margin-bottom:9px}
+.dl-date i{color:var(--accent);font-size:16px}
+.dl-sum{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:11px}
+.dl-chip{font-size:11px;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:16px;padding:3px 9px;white-space:nowrap}
+.dl-chip b{color:var(--text);font-variant-numeric:tabular-nums;margin-left:2px}
+.dl-chip small{color:var(--dim);font-size:9px}
+.dl-chip.dl-s{border-color:rgba(91,155,246,.4)} .dl-chip.dl-s b{color:#5b9bf6}
+.dl-chip.dl-r{border-color:rgba(155,123,255,.4)} .dl-chip.dl-r b{color:var(--accent2)}
+.dl-cols{display:grid;grid-template-columns:1fr;gap:10px}
+.dl-col-h{font-size:10.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;padding:5px 8px;border-radius:7px;margin-bottom:7px}
+.dl-s-h{background:rgba(91,155,246,.14);color:#5b9bf6}
+.dl-r-h{background:rgba(155,123,255,.14);color:var(--accent2)}
+.dl-empty{font-size:11.5px;color:var(--dim);padding:6px 8px}
+.dl-c{border:1px solid var(--line);border-radius:9px;margin-bottom:7px;overflow:hidden;background:var(--panel)}
+.dl-c summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:9px 11px;flex-wrap:wrap}
+.dl-c summary::-webkit-details-marker{display:none}
+.dl-c-name{font-size:12.5px;font-weight:700;flex:1;min-width:90px}
+.dl-c-amt{font-size:12px;color:var(--text)}
+.dl-src{font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:12px}
+.dl-src-sherry{background:rgba(91,155,246,.16);color:#5b9bf6}
+.dl-src-rawan{background:rgba(155,123,255,.16);color:var(--accent2)}
+.dl-c[open] summary{border-bottom:1px solid var(--line)}
+.dl-c-body{padding:9px 11px;display:flex;flex-direction:column;gap:5px}
+.dl-kv{display:flex;justify-content:space-between;gap:12px;font-size:11.5px;color:var(--muted)}
+.dl-kv b{color:var(--text);font-weight:600;text-align:right;word-break:break-word}
+@media(min-width:760px){.dl-cols{grid-template-columns:1fr 1fr}.dl-filters{grid-template-columns:repeat(5,1fr)}.dl-filters input{grid-column:auto}}
 .rl-note{font-size:11px;color:var(--dim);line-height:1.45;margin-top:10px;display:flex;gap:7px;align-items:flex-start}
 .rl-note i{color:var(--blue);font-size:14px;flex:none}
 .dt td .mono{font-variant-numeric:tabular-nums}
