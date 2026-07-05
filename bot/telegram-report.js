@@ -25,19 +25,21 @@
 
 const fs = require('fs');
 const path = require('path');
-const { fetchSheet, fetchSheetOptional } = require('../lib/sheets');
-const compute = require('../lib/compute');
+const { fetchSheet, fetchSheetOptional } = require('./lib/sheets');   // self-contained (vendored) — no dashboard dependency
+const compute = require('./lib/compute');
 
-/* ---------- tiny .env loader (same approach as server.js; never overrides real env) ---------- */
+/* ---------- tiny .env loader (never overrides real env; cPanel sets process.env directly) ----------
+ * Reads the bot's own .env first, then a repo-root .env as a dev fallback when run inside the repo. */
 (function loadEnv() {
-  try {
-    const p = path.join(__dirname, '..', '.env');
-    if (!fs.existsSync(p)) return;
-    for (const line of fs.readFileSync(p, 'utf8').split(/\r?\n/)) {
-      const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
-      if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-    }
-  } catch (_) {}
+  for (const p of [path.join(__dirname, '.env'), path.join(__dirname, '..', '.env')]) {
+    try {
+      if (!fs.existsSync(p)) continue;
+      for (const line of fs.readFileSync(p, 'utf8').split(/\r?\n/)) {
+        const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
+        if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+      }
+    } catch (_) {}
+  }
 })();
 
 const TOKEN   = (process.env.TELEGRAM_BOT_TOKEN || '').trim();

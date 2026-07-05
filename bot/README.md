@@ -1,59 +1,61 @@
-# ALMUTARJEM — Telegram Daily Report Bot
+# ALMUTARJEM — Telegram Daily Report Bot (standalone app)
 
-Standalone, **read-only** bot. Sends one clean daily Telegram message with the files
-registered that day, grouped by staff: **Sherry** (main Transactions sheet) vs **Rawan**
-(Rawan sheet). It reuses the dashboard's own data layer (`lib/sheets.js` + `lib/compute.js`)
-and **does not modify** the dashboard, the server, or the Google Sheets.
+A **self-contained, read-only** Node.js app. Sends one clean daily Telegram message with the
+files registered that day, grouped by staff: **Sherry** (main Transactions sheet) vs **Rawan**
+(Rawan sheet). Totals per staff + grand totals.
 
-## What it sends
-- Header (date) + per-file lines: Time (— , not stored in sheet), ATS №/ref, client, service,
-  amount, payment status, file status, notes.
-- Two sections: 👩‍💼 Sherry, then 👩‍💼 Rawan.
-- Totals: files + revenue per staff, plus grand totals.
+**Self-contained:** this folder has everything it needs — its own `package.json`, its own vendored
+copy of the read-only data helpers (`lib/sheets.js`, `lib/compute.js`), and its own `.env`. It runs
+as its **own Node.js app** with its **own environment variables** and does **not** depend on, run
+inside, or modify the dashboard/staging apps or the Google Sheets. No npm dependencies (Node ≥18).
+
+```
+bot/
+ ├─ telegram-report.js   ← the bot
+ ├─ package.json         ← its own project
+ ├─ .env.example         ← copy to .env (or use cPanel Environment vars)
+ └─ lib/                 ← vendored read-only helpers (sheets.js, compute.js)
+```
 
 ## 1. Create the Telegram bot
-1. In Telegram, message **@BotFather** → `/newbot` → follow prompts → copy the **token**.
-2. Add the bot to the group/channel (or DM it) where reports should go.
-3. Get the **chat id**: send any message in that chat, then open
-   `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates` and read `message.chat.id`
-   (groups are negative, e.g. `-1001234567890`). Or use **@userinfobot** for a personal chat id.
+1. Telegram → **@BotFather** → `/newbot` → copy the **token**.
+2. Add the bot to the target group/chat; send a message there.
+3. Get the **chat id**: open `https://api.telegram.org/bot<TOKEN>/getUpdates` → read `message.chat.id`
+   (groups are negative, e.g. `-1001234567890`).
 
-## 2. Configure (env vars — in `.env` locally, or the cPanel Node app's Environment)
-```
-TELEGRAM_BOT_TOKEN=123456:ABC...       # from BotFather
-TELEGRAM_CHAT_ID=-1001234567890         # target chat (also the only chat allowed to command)
-REPORT_TIME_UAE=20:00                    # daily send time, Asia/Dubai (default 20:00)
-# reused automatically: SPREADSHEET_ID, SHEET_TRANSACTIONS/EXPENSES/SETTINGS, RAWAN_GVIZ_URL
-```
+## 2. Configure (env vars)
+Set these in the **cPanel app's Environment variables** (preferred — secrets stay off disk),
+or copy `.env.example` → `.env` locally. Required: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
+`REPORT_TIME_UAE`, `SPREADSHEET_ID`, `SHEET_TRANSACTIONS/EXPENSES/SETTINGS`, `RAWAN_GVIZ_URL`.
 
-## 3. Run
+## 3. Run locally
 ```bash
-# Test WITHOUT sending (no token needed) — prints today's report to the console:
-node bot/telegram-report.js --dry today
-node bot/telegram-report.js --dry yesterday
-
-# Send once and exit (great for cron):
-node bot/telegram-report.js --today
-node bot/telegram-report.js --yesterday
-
-# Persistent: auto-sends daily at REPORT_TIME_UAE AND answers /today and /yesterday live:
-node bot/telegram-report.js
+cd bot
+node telegram-report.js --dry today       # build + PRINT (no token needed) — great for testing
+node telegram-report.js --today           # send once, then exit
+node telegram-report.js                    # persistent: 8pm auto-send + live /today /yesterday
 ```
+Telegram commands (only from the configured chat): **/today**, **/yesterday**, **/help**.
 
-### Commands (in Telegram, from the configured chat)
-- `/today` — send today's report now
-- `/yesterday` — send yesterday's report
-- `/help` — usage
-
-## 4. Deployment options (pick one)
-- **Persistent process (gives live /today /yesterday commands):** run
-  `node bot/telegram-report.js` as its own cPanel *Setup Node.js App* (startup file
-  `bot/telegram-report.js`) or via `pm2 start bot/telegram-report.js --name ats-bot`.
-- **Cron only (simplest, no live commands):** add a daily cron at 20:00 UAE:
-  `cd ~/ats-dashboard && node bot/telegram-report.js --today`
+## 4. Deploy as its OWN cPanel Node.js app
+1. **Get the code** (Terminal): `git clone -b feature/mobile-daily-leads https://github.com/Mgho87/ats-dashboard.git ~/ats-bot`
+   → the bot lives at `~/ats-bot/bot` (fully self-contained).
+2. **A URL for it:** create subdomain `bot.mutarjem.ae` (Passenger requires an Application URL).
+3. **Setup Node.js App:**
+   - Application root: **`ats-bot/bot`**   ← the bot folder itself
+   - Application URL: `bot.mutarjem.ae`
+   - Startup file: **`telegram-report.js`**
+   - Node: 20 → **Create** → **Run NPM Install**.
+4. **Environment variables:** add the vars from step 2 (token + chat id + report time + sheet vars).
+5. **Save → Restart.** Check `~/ats-bot/bot/bot.log` for `bot started (persistent)`.
+6. **Stop/Restart:** cPanel → Setup Node.js App → this app → Stop / Restart. Independent of the
+   dashboard — stopping it has zero effect on the dashboard or staging.
+7. **Update later:** `cd ~/ats-bot && git pull origin feature/mobile-daily-leads` → **Restart**.
 
 ## Notes
-- Read-only: it never writes to Telegram-triggered edits, the sheets, or the dashboard.
-- Every send result and any Google-Sheet error is logged to `bot/bot.log` and the console.
-- The sheets have **no time column**, so "Time" shows `—` (not fabricated).
-- Only the configured `TELEGRAM_CHAT_ID` can trigger commands.
+- The persistent app binds the PORT cPanel gives it (a tiny `ats-bot ok` health page) so Passenger
+  keeps the background worker alive.
+- Read-only: never writes to the sheets, the dashboard, or anything but Telegram messages it sends.
+- Every send result and any Google-Sheet error is logged to `bot.log` (+ console).
+- Sheets have no time column → "Time" shows `—` (not fabricated).
+- Only the configured `TELEGRAM_CHAT_ID` may trigger commands.
