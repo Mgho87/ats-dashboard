@@ -141,14 +141,34 @@ async function getRawan(dateKey) {
 }
 
 /* ---------- report building (returns array of message chunks ≤ Telegram limit) ---------- */
-function fileLine(i, r, withOutcome) {
-  const ref = r.ref && r.ref !== '0' ? '#' + esc(r.ref) : '—';
-  let s = `${i}) 🕐— · <b>${ref}</b>\n`;
-  s += `   ${esc(r.client || '—')}${r.service ? ' · ' + esc(r.service) : ''}\n`;
-  s += `   <b>${AED(r.amount)}</b> · ${esc(cap(r.status))} · ${esc(cap(r.fileStatus))}`;
-  if (withOutcome && r.outcome) s += ` · ${esc(cap(r.outcome))}`;
-  if (r.notes) s += `\n   📝 ${esc(r.notes)}`;
-  return s + '\n';
+/* ---------- monospace table helpers (fixed-width columns that line up in Telegram <pre>) ----------
+ * Pad on the RAW string, THEN esc() — Telegram renders &amp;/&lt;/&gt; as a single glyph, so the
+ * padded widths still line up. Emojis are avoided inside <pre> (they are double-width). */
+function _clip(s, n) { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+function padR(s, n) { s = _clip(s, n); return s + ' '.repeat(Math.max(0, n - s.length)); }
+function padL(s, n) { s = _clip(s, n); return ' '.repeat(Math.max(0, n - s.length)) + s; }
+const num0 = n => (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+function fileStatusShort(r) {
+  if (isCancelled(r.status)) return 'Canc';
+  if (/deliver|complete|done|ready|closed|collected/i.test(r.fileStatus)) return 'Done';
+  if (/pending|progress|await|\bnew\b|process/i.test(r.fileStatus)) return 'Pend';
+  return r.fileStatus ? _clip(cap(r.fileStatus), 4) : '—';
+}
+// A files "table": Client | AED | Status. Capped so one section never blows past Telegram's limit.
+const FILES_CAP = 40;
+function filesTable(list) {
+  if (!list.length) return '<i>No files today.</i>\n';
+  const shown = list.slice(0, FILES_CAP);
+  let out = padR('Client', 13) + ' ' + padL('AED', 7) + '  Stat\n';
+  shown.forEach(r => { out += padR(r.client || '—', 13) + ' ' + padL(num0(r.amount), 7) + '  ' + fileStatusShort(r) + '\n'; });
+  let block = '<pre>' + esc(out) + '</pre>';
+  if (list.length > FILES_CAP) block += `\n<i>…and ${list.length - FILES_CAP} more file(s).</i>`;
+  return block + '\n';
+}
+// A key/value "table": labels left-aligned to a common width, values follow.
+function kvTable(rows) {
+  const w = Math.max(...rows.map(([k]) => k.length));
+  return '<pre>' + esc(rows.map(([k, v]) => padR(k, w) + '  ' + v).join('\n')) + '</pre>\n';
 }
 function empStats(list) {
   const clients = new Set(list.map(r => (r.client || '').trim().toLowerCase()).filter(Boolean)).size;
@@ -158,8 +178,19 @@ function empStats(list) {
   return { files: list.length, clients, completed, pending, revenue };
 }
 function empStatusLine(m) { return !m.files ? 'No activity' : ('Active' + (m.pending ? ` · ${m.pending} pending` : ' · all done')); }
+// Pack pre-built sections into ≤4000-char Telegram messages WITHOUT splitting a section
+// (each section carries its own complete <pre> blocks, so entities are never left unclosed).
+function packSections(sections) {
+  const chunks = []; let cur = '';
+  for (const sec of sections) {
+    if (cur && (cur + sec).length > 4000) { chunks.push(cur); cur = ''; }
+    cur += sec;
+  }
+  if (cur.trim()) chunks.push(cur);
+  return chunks.length ? chunks : [''];
+}
 function buildReport(dateKey, label, sherry, rawan, rawanConnected) {
-  const SEP = '━━━━━━━━━━━━━━━━━━';
+  const SEP = '━━━━━━━━━━━━━━━';
   const s = empStats(sherry), r = empStats(rawan);
   // office totals (clients de-duplicated across both staff so the same person isn't counted twice)
   const allClients = new Set([...sherry, ...rawan].map(x => (x.client || '').trim().toLowerCase()).filter(Boolean)).size;
@@ -171,7 +202,7 @@ function buildReport(dateKey, label, sherry, rawan, rawanConnected) {
   const dayName = d.toLocaleDateString('en-GB', { weekday: 'long' });
   const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-  const bizStatus = hasActivity ? 'Working day' : (isWeekend ? 'Weekend — no activity' : 'No activity');
+  const bizStatus = hasActivity ? 'Working day' : (isWeekend ? 'Weekend — idle' : 'No activity');
   // best performer by files (tiebreak revenue); N/A when idle
   const best = !hasActivity ? 'N/A' : (s.files > r.files ? 'Sherry' : r.files > s.files ? 'Rawan' : (s.revenue >= r.revenue ? 'Sherry' : 'Rawan'));
   // missing/incomplete records across both staff
@@ -179,40 +210,42 @@ function buildReport(dateKey, label, sherry, rawan, rawanConnected) {
   const nClient = both.filter(x => !(x.client || '').trim()).length;
   const nLead   = both.filter(x => !(x.lead || '').trim()).length;
   const nMethod = both.filter(x => !(x.method || '').trim() && !isCancelled(x.status)).length;
-  if (nClient) miss.push(`${nClient} missing client name`);
-  if (nLead)   miss.push(`${nLead} missing lead source`);
-  if (nMethod) miss.push(`${nMethod} missing payment method`);
+  if (nClient) miss.push(`${nClient} client name`);
+  if (nLead)   miss.push(`${nLead} lead source`);
+  if (nMethod) miss.push(`${nMethod} payment method`);
   const missSummary = miss.length ? miss.join(', ') : 'None';
 
-  const empBlock = (name, list, m, withOutcome) =>
-    `👩‍💼 <b>${name}</b>\n` +
-    `Clients: ${m.clients}\nFiles: ${m.files}\nCompleted: ${m.completed}\nPending: ${m.pending}\nRevenue: ${AED(m.revenue)}\n` +
-    `Status: ${empStatusLine(m)}\n` +
-    (list.length ? '<i>Files:</i>\n' + list.map((x, i) => fileLine(i + 1, x, withOutcome)).join('') : '');
+  const staffBlock = (name, list, m) =>
+    `${SEP}\n👩‍💼 <b>${esc(name)}</b>\n` +
+    kvTable([['Files', String(m.files)], ['Clients', String(m.clients)], ['Completed', String(m.completed)],
+             ['Pending', String(m.pending)], ['Revenue', AED(m.revenue)]]) +
+    filesTable(list);
 
-  const report =
-    `📅 <b>DAILY OFFICE REPORT</b>\n${esc(dayName)} • ${esc(dateStr)}\n${REPORT_TIME} Asia/Dubai\n` +
+  // 1) DAILY SUMMARY (header + office-wide totals)
+  const secSummary =
+    `📅 <b>DAILY OFFICE REPORT</b>\n${esc(dayName)} • ${esc(dateStr)}\n🕗 ${REPORT_TIME} Asia/Dubai\n` +
     `${SEP}\n📌 <b>DAILY SUMMARY</b>\n` +
-    `Status: ${esc(bizStatus)}\nClients: ${allClients}\nFiles: ${tFiles}\nCompleted: ${tCompleted}\nPending: ${tPending}\nRevenue: ${AED(tRevenue)}\n` +
-    `${SEP}\n` +
-    empBlock('SHERRY', sherry, s, false) + '\n' +
-    (rawanConnected ? empBlock('RAWAN', rawan, r, true) : `👩‍💼 <b>RAWAN</b>\n<i>Rawan feed not connected.</i>\n`) +
-    `${SEP}\n🏢 <b>TOTAL DAILY OFFICE</b>\n` +
-    `Total Clients: ${allClients}\nTotal Files: ${tFiles}\nCompleted: ${tCompleted}\nPending: ${tPending}\nRevenue: ${AED(tRevenue)}\n` +
-    `Best Performer: ${esc(best)}\nMissing Data: ${esc(missSummary)}\n` +
-    `${SEP}\n🔔 <b>IMPORTANT REMINDERS</b>\n` +
-    `• Check pending payments\n• Follow up unfinished files\n• Make sure Lead Source is filled\n• Make sure Payment Method is filled\n• Review tomorrow's work\n` +
-    (hasActivity ? `✅ Scheduler running — report delivered automatically at ${REPORT_TIME}.`
-                 : `✅ No business activity recorded today — scheduler test successful.`);
+    kvTable([['Status', bizStatus], ['Clients', String(allClients)], ['Files', String(tFiles)],
+             ['Completed', String(tCompleted)], ['Pending', String(tPending)], ['Revenue', AED(tRevenue)]]);
 
-  if (report.length <= 4000) return [report];
-  const chunks = []; let cur = '';
-  for (const line of report.split('\n')) {
-    if ((cur + line + '\n').length > 4000) { chunks.push(cur); cur = ''; }
-    cur += line + '\n';
-  }
-  if (cur.trim()) chunks.push(cur);
-  return chunks;
+  // 2) SHERRY table   3) RAWAN table
+  const secSherry = staffBlock('SHERRY', sherry, s);
+  const secRawan  = rawanConnected
+    ? staffBlock('RAWAN', rawan, r)
+    : `${SEP}\n👩‍💼 <b>RAWAN</b>\n<i>Rawan feed not connected.</i>\n`;
+
+  // 4) TOTAL DAILY OFFICE   5) IMPORTANT REMINDERS (+ scheduler / no-data line)
+  const secTotals =
+    `${SEP}\n🏢 <b>TOTAL DAILY OFFICE</b>\n` +
+    kvTable([['Clients', String(allClients)], ['Files', String(tFiles)], ['Completed', String(tCompleted)],
+             ['Pending', String(tPending)], ['Revenue', AED(tRevenue)], ['Best', best], ['Missing', missSummary]]);
+  const secReminders =
+    `${SEP}\n🔔 <b>IMPORTANT REMINDERS</b>\n` +
+    `• Check pending payments\n• Follow up unfinished files\n• Fill in Lead Source\n• Fill in Payment Method\n• Review tomorrow's work\n` +
+    (hasActivity ? `\n✅ Scheduler running — report delivered automatically at ${REPORT_TIME}.`
+                 : `\n✅ No business activity recorded today — scheduler test successful.`);
+
+  return packSections([secSummary, secSherry, secRawan, secTotals + secReminders]);
 }
 
 /* ---------- Telegram API ---------- */
