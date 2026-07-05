@@ -109,7 +109,7 @@ async function getSherry(dateKey) {
   const parsed = compute.parseAll(trans, exp, settings, new Date());
   return parsed.records.filter(r => r.dateKey === dateKey).map(r => ({
     ref: r.ref || '', client: r.client || '', service: r.service || '', amount: +r.amount || 0,
-    status: r.payment || '', fileStatus: r.delivery || '', notes: r.notes || '', phone: r.phone || '',
+    status: r.payment || '', fileStatus: r.delivery || '', method: r.method || '', lead: r.lead || '', notes: r.notes || '', phone: r.phone || '',
   }));
 }
 async function getRawan(dateKey) {
@@ -126,15 +126,15 @@ async function getRawan(dateKey) {
     else if (/client/.test(k)) idx.client = n; else if (/phone/.test(k)) idx.phone = n;
     else if (/service/.test(k)) idx.service = n; else if (/amount/.test(k)) idx.amount = n;
     else if (/payment status/.test(k)) idx.status = n; else if (/file status/.test(k)) idx.fileStatus = n;
-    else if (/payment method/.test(k)) idx.method = n; else if (/lead outcome/.test(k)) idx.outcome = n;
-    else if (/note/.test(k)) idx.notes = n;
+    else if (/payment method/.test(k)) idx.method = n; else if (/lead source/.test(k)) idx.lead = n;
+    else if (/lead outcome/.test(k)) idx.outcome = n; else if (/note/.test(k)) idx.notes = n;
   });
   const g = (row, f) => idx[f] != null ? String(row[idx[f]] == null ? '' : row[idx[f]]).trim() : '';
   const rows = grid.slice(1)
     .filter(row => rawanDateKey(g(row, 'date')) === dateKey)
     .map(row => ({
       ref: g(row, 'ref'), client: g(row, 'client'), service: g(row, 'service'), amount: rawanAmount(g(row, 'amount')),
-      status: g(row, 'status'), fileStatus: g(row, 'fileStatus'), outcome: g(row, 'outcome'), notes: g(row, 'notes'), phone: g(row, 'phone'),
+      status: g(row, 'status'), fileStatus: g(row, 'fileStatus'), method: g(row, 'method'), lead: g(row, 'lead'), outcome: g(row, 'outcome'), notes: g(row, 'notes'), phone: g(row, 'phone'),
     }))
     .filter(o => o.client || (o.ref && o.ref !== '0') || o.service || o.amount || o.phone); // drop blank placeholder rows
   return { rows, connected: true };
@@ -150,33 +150,64 @@ function fileLine(i, r, withOutcome) {
   if (r.notes) s += `\n   📝 ${esc(r.notes)}`;
   return s + '\n';
 }
-function totals(list) {
-  return { files: list.length, revenue: list.reduce((a, r) => a + (isCancelled(r.status) ? 0 : r.amount), 0) };
+function empStats(list) {
+  const clients = new Set(list.map(r => (r.client || '').trim().toLowerCase()).filter(Boolean)).size;
+  const completed = list.filter(r => /deliver|complete|done|ready|closed|collected/i.test(r.fileStatus)).length;
+  const pending = list.filter(r => /pending|progress|await|\bnew\b|process/i.test(r.fileStatus)).length;
+  const revenue = list.reduce((a, r) => a + (isCancelled(r.status) ? 0 : r.amount), 0);
+  return { files: list.length, clients, completed, pending, revenue };
 }
+function empStatusLine(m) { return !m.files ? 'No activity' : ('Active' + (m.pending ? ` · ${m.pending} pending` : ' · all done')); }
 function buildReport(dateKey, label, sherry, rawan, rawanConnected) {
-  const st = totals(sherry), rt = totals(rawan);
-  const header =
-    `📋 <b>ALMUTARJEM — Daily Files</b>\n` +
-    `🗓 ${esc(fmtDay(dateKey))}${label ? '  <i>(' + esc(label) + ')</i>' : ''}\n` +
-    `<i>times not stored in sheet → shown as —</i>\n`;
-  const sherrySec =
-    `\n━━━━━━━━━━━━━━\n👩‍💼 <b>SHERRY</b> — ${st.files} files · <b>${AED(st.revenue)}</b>\n━━━━━━━━━━━━━━\n` +
-    (sherry.length ? sherry.map((r, i) => fileLine(i + 1, r, false)).join('') : '<i>No files.</i>\n');
-  const rawanSec =
-    `\n━━━━━━━━━━━━━━\n👩‍💼 <b>RAWAN</b> — ${rt.files} files · <b>${AED(rt.revenue)}</b>\n━━━━━━━━━━━━━━\n` +
-    (!rawanConnected ? '<i>Rawan feed not connected.</i>\n'
-      : rawan.length ? rawan.map((r, i) => fileLine(i + 1, r, true)).join('') : '<i>No files.</i>\n');
-  const footer =
-    `\n━━━━━━━━━━━━━━\n📊 <b>TOTALS</b>\n` +
-    `Sherry: <b>${st.files}</b> files · <b>${AED(st.revenue)}</b>\n` +
-    `Rawan:  <b>${rt.files}</b> files · <b>${AED(rt.revenue)}</b>\n` +
-    `Grand:  <b>${st.files + rt.files}</b> files · <b>${AED(st.revenue + rt.revenue)}</b>`;
+  const SEP = '━━━━━━━━━━━━━━━━━━';
+  const s = empStats(sherry), r = empStats(rawan);
+  // office totals (clients de-duplicated across both staff so the same person isn't counted twice)
+  const allClients = new Set([...sherry, ...rawan].map(x => (x.client || '').trim().toLowerCase()).filter(Boolean)).size;
+  const tFiles = s.files + r.files, tCompleted = s.completed + r.completed, tPending = s.pending + r.pending, tRevenue = s.revenue + r.revenue;
+  const hasActivity = tFiles > 0;
+  // day + business status (UAE weekend = Sat + Sun)
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey) || [];
+  const d = dm.length ? new Date(+dm[1], +dm[2] - 1, +dm[3]) : new Date();
+  const dayName = d.toLocaleDateString('en-GB', { weekday: 'long' });
+  const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+  const bizStatus = hasActivity ? 'Working day' : (isWeekend ? 'Weekend — no activity' : 'No activity');
+  // best performer by files (tiebreak revenue); N/A when idle
+  const best = !hasActivity ? 'N/A' : (s.files > r.files ? 'Sherry' : r.files > s.files ? 'Rawan' : (s.revenue >= r.revenue ? 'Sherry' : 'Rawan'));
+  // missing/incomplete records across both staff
+  const both = [...sherry, ...rawan], miss = [];
+  const nClient = both.filter(x => !(x.client || '').trim()).length;
+  const nLead   = both.filter(x => !(x.lead || '').trim()).length;
+  const nMethod = both.filter(x => !(x.method || '').trim() && !isCancelled(x.status)).length;
+  if (nClient) miss.push(`${nClient} missing client name`);
+  if (nLead)   miss.push(`${nLead} missing lead source`);
+  if (nMethod) miss.push(`${nMethod} missing payment method`);
+  const missSummary = miss.length ? miss.join(', ') : 'None';
 
-  // Assemble, then split into ≤4000-char chunks on line boundaries (Telegram limit is 4096).
-  const full = header + sherrySec + rawanSec + footer;
-  if (full.length <= 4000) return [full];
+  const empBlock = (name, list, m, withOutcome) =>
+    `👩‍💼 <b>${name}</b>\n` +
+    `Clients: ${m.clients}\nFiles: ${m.files}\nCompleted: ${m.completed}\nPending: ${m.pending}\nRevenue: ${AED(m.revenue)}\n` +
+    `Status: ${empStatusLine(m)}\n` +
+    (list.length ? '<i>Files:</i>\n' + list.map((x, i) => fileLine(i + 1, x, withOutcome)).join('') : '');
+
+  const report =
+    `📅 <b>DAILY OFFICE REPORT</b>\n${esc(dayName)} • ${esc(dateStr)}\n${REPORT_TIME} Asia/Dubai\n` +
+    `${SEP}\n📌 <b>DAILY SUMMARY</b>\n` +
+    `Status: ${esc(bizStatus)}\nClients: ${allClients}\nFiles: ${tFiles}\nCompleted: ${tCompleted}\nPending: ${tPending}\nRevenue: ${AED(tRevenue)}\n` +
+    `${SEP}\n` +
+    empBlock('SHERRY', sherry, s, false) + '\n' +
+    (rawanConnected ? empBlock('RAWAN', rawan, r, true) : `👩‍💼 <b>RAWAN</b>\n<i>Rawan feed not connected.</i>\n`) +
+    `${SEP}\n🏢 <b>TOTAL DAILY OFFICE</b>\n` +
+    `Total Clients: ${allClients}\nTotal Files: ${tFiles}\nCompleted: ${tCompleted}\nPending: ${tPending}\nRevenue: ${AED(tRevenue)}\n` +
+    `Best Performer: ${esc(best)}\nMissing Data: ${esc(missSummary)}\n` +
+    `${SEP}\n🔔 <b>IMPORTANT REMINDERS</b>\n` +
+    `• Check pending payments\n• Follow up unfinished files\n• Make sure Lead Source is filled\n• Make sure Payment Method is filled\n• Review tomorrow's work\n` +
+    (hasActivity ? `✅ Scheduler running — report delivered automatically at ${REPORT_TIME}.`
+                 : `✅ No business activity recorded today — scheduler test successful.`);
+
+  if (report.length <= 4000) return [report];
   const chunks = []; let cur = '';
-  for (const line of full.split('\n')) {
+  for (const line of report.split('\n')) {
     if ((cur + line + '\n').length > 4000) { chunks.push(cur); cur = ''; }
     cur += line + '\n';
   }
