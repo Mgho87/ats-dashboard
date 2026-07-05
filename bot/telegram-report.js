@@ -280,7 +280,15 @@ async function pollCommands() {
   if (has('--today'))     { await sendReport(dayKeyDubai(0), 'Today', CHAT_ID);     process.exit(0); }
   if (has('--yesterday')) { await sendReport(dayKeyDubai(-1), 'Yesterday', CHAT_ID); process.exit(0); }
 
-  // Persistent mode: daily scheduler + live commands
+  // Persistent mode: daily scheduler + live commands.
+  // cPanel/Passenger keeps a Node app alive only if it binds the PORT it provides — so bind a tiny
+  // health endpoint. The background worker (scheduler + Telegram polling) runs alongside it.
+  if (process.env.PORT) {
+    try {
+      require('http').createServer((_req, res) => { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ats-bot ok'); })
+        .listen(process.env.PORT, () => log('health server on port ' + process.env.PORT));
+    } catch (e) { log('health server error: ' + e.message); }
+  }
   log('ALMUTARJEM Telegram bot started (persistent). Report time ' + REPORT_TIME + ' ' + TZ + '.');
   scheduleDaily();
   pollCommands();
