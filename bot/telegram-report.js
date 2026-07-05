@@ -221,6 +221,35 @@ async function sendReport(dateKey, label, chatId) {
   }
 }
 
+/* ---------- atomic exactly-once daily send (Passenger-safe across ALL workers) ----------
+ * Passenger runs the app as several worker processes; each runs its own scheduler and wakes at
+ * REPORT_TIME. To send the report EXACTLY ONCE, each worker tries to atomically create a per-day
+ * marker file with O_EXCL (fs flag 'wx'): only the worker that CREATES it sends; every other worker
+ * gets EEXIST and skips silently (logged). Filesystem is shared by all workers, so this is safe. */
+function markerPath(dateKey) { return path.join(__dirname, '.sent-' + dateKey); }
+function claimDailySend(dateKey) {
+  try { const fd = fs.openSync(markerPath(dateKey), 'wx'); fs.writeSync(fd, new Date().toISOString() + '\n'); fs.closeSync(fd); return true; }
+  catch (e) { if (e.code === 'EEXIST') return false; throw e; }   // EEXIST → another worker already claimed today
+}
+function cleanOldMarkers() {
+  const cutoff = dayKeyDubai(-10);
+  try { for (const f of fs.readdirSync(__dirname)) { const m = /^\.sent-(\d{4}-\d{2}-\d{2})$/.exec(f); if (m && m[1] < cutoff) { try { fs.unlinkSync(path.join(__dirname, f)); } catch (_) {} } } } catch (_) {}
+}
+async function sendDailyScheduled(dateKey) {
+  cleanOldMarkers();
+  if (!claimDailySend(dateKey)) { log(`Daily report ${dateKey} already sent by another worker — skipping (pid ${process.pid}).`); return; }
+  log(`Claimed daily send ${dateKey} (pid ${process.pid} will send).`);
+  try {
+    const { chunks, sherryN, rawanN } = await makeReport(dateKey, 'Today');
+    await sendChunks(CHAT_ID, chunks);
+    log(`SENT daily (${dateKey}) → chat ${CHAT_ID} · Sherry ${sherryN} · Rawan ${rawanN} · ${chunks.length} msg(s)`);
+  } catch (e) {
+    log(`SEND FAILED daily (${dateKey}): ${e.message}`);
+    try { fs.unlinkSync(markerPath(dateKey)); log(`Removed marker ${dateKey} so the send can be retried.`); } catch (_) {}
+    try { if (TOKEN && CHAT_ID) await tg('sendMessage', { chat_id: CHAT_ID, text: '⚠️ Daily report failed: ' + e.message }); } catch (_) {}
+  }
+}
+
 /* ---------- scheduler (persistent mode): fire once per day at REPORT_TIME_UAE ---------- */
 function msUntilReport() {
   const [H, M] = REPORT_TIME.split(':').map(Number);
@@ -234,7 +263,7 @@ function scheduleDaily() {
   const wait = msUntilReport();
   log(`Next daily report in ${(wait / 3600000).toFixed(2)}h (at ${REPORT_TIME} ${TZ}).`);
   setTimeout(async () => {
-    await sendReport(dayKeyDubai(0), 'Today', CHAT_ID);
+    await sendDailyScheduled(dayKeyDubai(0));   // exactly-once across all Passenger workers
     scheduleDaily();
   }, wait);
 }
@@ -282,16 +311,26 @@ async function pollCommands() {
   if (has('--today'))     { await sendReport(dayKeyDubai(0), 'Today', CHAT_ID);     process.exit(0); }
   if (has('--yesterday')) { await sendReport(dayKeyDubai(-1), 'Yesterday', CHAT_ID); process.exit(0); }
 
-  // Persistent mode: daily scheduler + live commands.
+  // Persistent mode: SEND-ONLY daily scheduler (no command polling by default).
   // cPanel/Passenger keeps a Node app alive only if it binds the PORT it provides — so bind a tiny
-  // health endpoint. The background worker (scheduler + Telegram polling) runs alongside it.
+  // health endpoint. The scheduler runs alongside it in every worker; the exactly-once marker
+  // (see sendDailyScheduled) guarantees only ONE worker actually sends the report.
   if (process.env.PORT) {
     try {
       require('http').createServer((_req, res) => { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ats-bot ok'); })
         .listen(process.env.PORT, () => log('health server on port ' + process.env.PORT));
     } catch (e) { log('health server error: ' + e.message); }
   }
-  log('ALMUTARJEM Telegram bot started (persistent). Report time ' + REPORT_TIME + ' ' + TZ + '.');
+  log('ALMUTARJEM Telegram bot started (persistent, SEND-ONLY). Report time ' + REPORT_TIME + ' ' + TZ + ' · pid ' + process.pid + '.');
   scheduleDaily();
-  pollCommands();
+
+  // Command polling is DISABLED by default. Under Passenger (multi-worker), each worker would open
+  // its own getUpdates poll and Telegram allows only ONE → "Conflict: terminated by other getUpdates".
+  // Send-only needs no polling. Opt-in is available ONLY for a single-instance deployment.
+  if (process.env.BOT_ENABLE_COMMANDS === 'true') {
+    log('WARNING: BOT_ENABLE_COMMANDS=true — command polling enabled. SAFE ONLY as a single instance, NOT under multi-worker Passenger.');
+    pollCommands();
+  } else {
+    log('Command polling disabled (send-only). No getUpdates — Passenger multi-worker safe.');
+  }
 })();

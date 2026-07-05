@@ -23,3 +23,7 @@ cloudflared.exe
 .playwright-mcp/
 .DS_Store
 almutarjem-audit/
+
+# Telegram bot runtime once-per-day markers (created at send time)
+bot/.sent-*
+.sent-*
