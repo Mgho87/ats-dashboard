@@ -1210,7 +1210,7 @@ function rawanRenderTable() {
 /* ============ DAILY LEADS (mobile-first) — Sherry (main sheet) vs Rawan, day by day ============
    Read-only view over existing sources: Sherry = view.sherryRecords (Main Transactions, official),
    Rawan = _rawanRows (Rawan Daily Report, lead-tracking only — NEVER counted as official revenue). */
-var _dlFilter = { source: 'all', pay: '', file: '', lead: '', q: '' };
+var _dlDate = null;   // selected day (YYYY-MM-DD) for the single-day Sherry⇄Rawan comparison
 const _DL_MON = { jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12' };
 function rawanDateKey(s) {
   const v = String(s == null ? '' : s).trim();
@@ -1221,118 +1221,101 @@ function rawanDateKey(s) {
   if (m) { const y = m[3].length===2?'20'+m[3]:m[3]; return y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0'); }
   return '';
 }
-function dlFmtDate(dk) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dk || ''); if (!m) return dk || '—';
-  const d = new Date(+m[1], +m[2]-1, +m[3]); if (isNaN(d)) return dk;
-  return d.toLocaleDateString('en-GB', { weekday:'short', day:'2-digit', month:'long', year:'numeric' });
+function dlFmtDay(dk){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(dk||''); if(!m) return dk||'—';
+  const d=new Date(+m[1],+m[2]-1,+m[3]); if(isNaN(d)) return dk;
+  return d.toLocaleDateString('en-GB',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
 }
-function dlSetRange(kind) {                                                   // reuse the global date filter
-  const b = document.querySelector('#presets [data-range="'+kind+'"]');
-  document.querySelectorAll('#presets button').forEach(x => x.classList.remove('active'));
-  if (b) b.classList.add('active');
-  state.filter.range = kind;
-  const r = computeRange(kind); el('fFrom').value = r.from; el('fTo').value = r.to;
-  applyFilter();
+function dlDateKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function dlToday(){ try{ return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Dubai'}).format(new Date()); }catch(e){ return dlDateKey(new Date()); } }
+function dlAddDays(dk,n){ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(dk); if(!m) return dk; const d=new Date(+m[1],+m[2]-1,+m[3]); d.setDate(d.getDate()+n); return dlDateKey(d); }
+function dlSetDate(dk){ if(dk){ _dlDate=dk; rDaily(); } }
+function dlNav(n){ _dlDate=dlAddDays(_dlDate||dlToday(), n); rDaily(); }
+function dlAllDates(){
+  const view=(state.data&&state.data.view)||{}, set=new Set();
+  (view.sherryRecords||[]).forEach(r=>{ if(r.date) set.add(r.date); });
+  (_rawanRows||[]).forEach(r=>{ const d=rawanDateKey(r.date); if(d) set.add(d); });
+  return Array.from(set).sort();
 }
-function dlAllRecords() {
-  const view = (state.data && state.data.view) || {};
-  const sherry = (view.sherryRecords || []).map(r => ({
-    source:'sherry', dateKey:r.date, client:r.client||'', phone:r.phone||'', service:r.service||'',
-    amount:+r.amount||0, status:r.status||'', fileStatus:r.fileStatus||'', lead:r.lead||'', outcome:'', notes:r.notes||''
-  }));
-  const from = state.filter.from, to = state.filter.to;
-  const rawan = (_rawanRows || []).map(r => ({
-    source:'rawan', dateKey:rawanDateKey(r.date), client:r.client||'', phone:r.phone||'', service:r.service||'',
-    amount:+r.amount||0, status:r.payStatus||'', fileStatus:r.fileStatus||'', lead:r.leadSource||'', outcome:r.leadOutcome||'', notes:r.notes||''
-  })).filter(r => r.dateKey && (!from || r.dateKey >= from) && (!to || r.dateKey <= to));
-  return sherry.concat(rawan);
+function dlDayRecords(dk){
+  const view=(state.data&&state.data.view)||{};
+  const sherry=(view.sherryRecords||[]).filter(r=>r.date===dk).map(r=>({
+    ref:r.ref||'', client:r.client||'', phone:r.phone||'', service:r.service||'', amount:+r.amount||0,
+    status:r.status||'', fileStatus:r.fileStatus||'', method:r.method||'', lead:r.lead||'', outcome:'', notes:r.notes||'' }));
+  const rawan=(_rawanRows||[]).filter(r=>rawanDateKey(r.date)===dk).map(r=>({
+    ref:r.reference||'', client:r.client||'', phone:r.phone||'', service:r.service||'', amount:+r.amount||0,
+    status:r.payStatus||'', fileStatus:r.fileStatus||'', method:r.payMethod||'', lead:r.leadSource||'', outcome:r.leadOutcome||'', notes:r.notes||'' }));
+  return { sherry, rawan };
 }
-function rDaily() {
-  const box = el('dlBody'); if (!box) return;
-  if (!_rawanFetched) {                                                      // lazy-load Rawan (shared with Leads Review)
-    _rawanFetched = true;
-    fetch('/api/rawan', { cache:'no-store' }).then(r => r.json()).then(j => {
-      _rawan = j; _rawanErr = null; _rawanRows = null;
-      if (j && j.connected) { try { _rawanRows = rawanParse(j.csv); } catch(e){ _rawanErr = e.message; } }
-      if (state.page === 'daily') rDaily();
-    }).catch(e => { _rawan = {connected:false,reason:'source unreachable'}; _rawanErr = e.message; if (state.page==='daily') rDaily(); });
-  }
-  const all = dlAllRecords();
-  const uniqSorted = key => Array.from(new Set(all.map(r => r[key]).filter(Boolean))).sort();
-  const f = _dlFilter;
-  const opt = (arr, sel) => ['<option value="">All</option>'].concat(arr.map(v=>`<option${v===sel?' selected':''}>${esc(v)}</option>`)).join('');
-  const rawanNote = (!_rawan || !_rawan.connected)
-    ? `<div class="callout" style="margin-bottom:10px"><i class="ti ti-plug-connected-x"></i> Rawan feed not connected${_rawan&&_rawan.reason?' ('+esc(_rawan.reason)+')':''} — showing <b>Sherry</b> (main sheet) only.</div>` : '';
-  box.innerHTML = `
-    ${rawanNote}
-    <div class="dl-quick">
-      <button onclick="dlSetRange('today')">Today</button>
-      <button onclick="dlSetRange('yesterday')">Yesterday</button>
-      <button onclick="dlSetRange('7')">Last 7 Days</button>
-      <button onclick="dlSetRange('30')">Last 30</button>
-      <button onclick="dlSetRange('all')">All</button>
-      <span class="dl-range" id="dlRange"></span>
-    </div>
-    <div class="dl-filters">
-      <input id="dlSearch" type="search" placeholder="Search name or phone…" value="${esc(f.q)}" oninput="_dlFilter.q=this.value;dlRenderDays()">
-      <select onchange="_dlFilter.source=this.value;dlRenderDays()">
-        <option value="all"${f.source==='all'?' selected':''}>All sources</option>
-        <option value="sherry"${f.source==='sherry'?' selected':''}>Sherry only</option>
-        <option value="rawan"${f.source==='rawan'?' selected':''}>Rawan only</option>
-      </select>
-      <select onchange="_dlFilter.pay=this.value;dlRenderDays()">${opt(uniqSorted('status'),f.pay)}</select>
-      <select onchange="_dlFilter.file=this.value;dlRenderDays()">${opt(uniqSorted('fileStatus'),f.file)}</select>
-      <select onchange="_dlFilter.lead=this.value;dlRenderDays()">${opt(uniqSorted('lead'),f.lead)}</select>
-    </div>
-    <div id="dlDays"></div>`;
-  const rl = el('dlRange'); if (rl) rl.textContent = computeRange(state.filter.range).label;
-  dlRenderDays();
+function dlMetrics(list){
+  return {
+    clients: list.length,
+    amount: list.reduce((a,r)=> a + (/cancel/i.test(r.status)?0:r.amount), 0),
+    paid: list.filter(r=>/paid/i.test(r.status)&&!/unpaid/i.test(r.status)).length,
+    pending: list.filter(r=>/outstanding|unpaid|pending|not ?paid|partial|await/i.test(r.status)).length,
+    filesDone: list.filter(r=>/deliver|complete|done|ready|closed|collected/i.test(r.fileStatus)).length,
+    filesPending: list.filter(r=>/pending|progress|await|\bnew\b|process/i.test(r.fileStatus)).length,
+  };
 }
-function dlCard(r) {
-  const st = (r.status||'').trim();
+function dlClientRow(r, isRawan){
+  const st=(r.status||'').trim();
   const pill = st ? badge(st.toLowerCase()) : '<span class="pill neutral">—</span>';
-  const srcCls = r.source === 'sherry' ? 'dl-src-sherry' : 'dl-src-rawan';
-  const row = (label, val) => `<div class="dl-kv"><span>${label}</span><b>${val ? esc(val) : '—'}</b></div>`;
-  return `<details class="dl-c">
-    <summary><span class="dl-c-name">${esc(r.client||'—')}</span><span class="dl-c-amt mono">${AED(r.amount)}</span>${pill}<span class="dl-src ${srcCls}">${r.source==='sherry'?'Sherry':'Rawan'}</span></summary>
-    <div class="dl-c-body">
-      ${row('Phone', r.phone)}${row('Service', r.service)}${row('File status', r.fileStatus)}${row('Lead source', r.lead)}${r.source==='rawan'?row('Lead outcome', r.outcome):''}${row('Notes', r.notes)}
+  const kv=(l,v)=>`<div class="dld-kv"><span>${l}</span><b>${v!=null&&v!==''?esc(v):'—'}</b></div>`;
+  const ats = (r.ref && r.ref!=='0') ? r.ref : '';
+  const meta = [ats?esc(ats):null, r.service?esc(r.service):null].filter(Boolean).join(' · ') || '—';
+  return `<details class="dld-c">
+    <summary>
+      <div class="dld-c-l1"><span class="dld-c-name">${esc(r.client||'—')}</span><span class="dld-c-amt mono">${AED(r.amount)}</span></div>
+      <div class="dld-c-l2"><span class="dld-c-meta">${meta}</span>${pill}</div>
+    </summary>
+    <div class="dld-c-body">
+      ${kv('Time','—')}${kv('ATS №', ats)}${kv('Phone', r.phone)}${kv('Service', r.service)}${kv('Amount', AED(r.amount))}
+      ${kv('Payment status', r.status)}${kv('Payment method', r.method)}${kv('File status', r.fileStatus)}
+      ${kv('Lead source', r.lead)}${isRawan?kv('Lead outcome', r.outcome):''}${kv('Notes', r.notes)}
     </div></details>`;
 }
-function dlRenderDays() {
-  const host = el('dlDays'); if (!host) return;
-  const f = _dlFilter, q = f.q.trim().toLowerCase();
-  const match = r =>
-    (f.source==='all' || r.source===f.source) &&
-    (!f.pay || r.status===f.pay) && (!f.file || r.fileStatus===f.file) && (!f.lead || r.lead===f.lead) &&
-    (!q || (r.client+' '+r.phone).toLowerCase().includes(q));
-  const recs = dlAllRecords().filter(match);
-  const days = {};
-  recs.forEach(r => { (days[r.dateKey] = days[r.dateKey] || {sherry:[],rawan:[]})[r.source].push(r); });
-  const keys = Object.keys(days).sort().reverse();
-  if (!keys.length) { host.innerHTML = '<div class="card"><div class="empty">No leads for this range / filters</div></div>'; return; }
-  const money = arr => arr.reduce((a,r)=> a + (/cancel/i.test(r.status)?0:r.amount), 0);
-  const paidN = arr => arr.filter(r=>/paid/i.test(r.status) && !/unpaid/i.test(r.status)).length;
-  const unpaidN = arr => arr.filter(r=>/outstanding|unpaid|pending|not paid|partial/i.test(r.status)).length;
-  host.innerHTML = keys.map(dk => {
-    const d = days[dk], sh = d.sherry, rw = d.rawan, all = sh.concat(rw);
-    const col = (arr, empty) => arr.length ? arr.map(dlCard).join('') : `<div class="dl-empty">${empty}</div>`;
-    return `<div class="dl-day">
-      <div class="dl-date"><i class="ti ti-calendar"></i> ${dlFmtDate(dk)}</div>
-      <div class="dl-sum">
-        <span class="dl-chip">Total <b>${all.length}</b></span>
-        <span class="dl-chip dl-s">Sherry <b>${sh.length}</b></span>
-        <span class="dl-chip dl-r">Rawan <b>${rw.length}</b></span>
-        <span class="dl-chip">Sherry <b>${AEDk(money(sh))}</b></span>
-        <span class="dl-chip">Rawan <b>${AEDk(money(rw))}</b><small> leads</small></span>
-        <span class="dl-chip">Paid <b>${paidN(all)}</b> / Unpaid <b>${unpaidN(all)}</b></span>
-      </div>
-      <div class="dl-cols">
-        <div class="dl-col"><div class="dl-col-h dl-s-h">Sherry · ${sh.length}</div>${col(sh,'No Sherry clients')}</div>
-        <div class="dl-col"><div class="dl-col-h dl-r-h">Rawan · ${rw.length}</div>${col(rw,'No Rawan clients')}</div>
-      </div>
+function rDaily(){
+  const box=el('dlBody'); if(!box) return;
+  if(!_rawanFetched){                                                       // lazy-load Rawan (shared with Leads Review)
+    _rawanFetched=true;
+    fetch('/api/rawan',{cache:'no-store'}).then(r=>r.json()).then(j=>{
+      _rawan=j;_rawanErr=null;_rawanRows=null;
+      if(j&&j.connected){try{_rawanRows=rawanParse(j.csv);}catch(e){_rawanErr=e.message;}}
+      if(state.page==='daily') rDaily();
+    }).catch(e=>{_rawan={connected:false,reason:'source unreachable'};_rawanErr=e.message;if(state.page==='daily')rDaily();});
+  }
+  if(!_dlDate){ const today=dlToday(), dates=dlAllDates(); _dlDate = dates.includes(today)?today:(dates[dates.length-1]||today); }
+  const dk=_dlDate, {sherry, rawan}=dlDayRecords(dk), sm=dlMetrics(sherry), rm=dlMetrics(rawan);
+  const dC=sm.clients-rm.clients, dR=sm.amount-rm.amount, dF=sm.filesDone-rm.filesDone;
+  const sgn=n=>(n>0?'+':'')+NUM(n), dcls=n=>n>0?'pos':(n<0?'neg':'');
+  const rawanNote=(!_rawan||!_rawan.connected)?`<div class="callout" style="margin:6px 0"><i class="ti ti-plug-connected-x"></i> Rawan not connected${_rawan&&_rawan.reason?' ('+esc(_rawan.reason)+')':''} — showing Sherry only.</div>`:'';
+  const card=(title,cls,m)=>`<div class="dld-card ${cls}">
+    <div class="dld-card-h">${title}</div>
+    <div class="dld-card-top"><span class="dld-card-cl mono">${NUM(m.clients)}</span><span class="dld-card-cll">clients</span></div>
+    <div class="dld-kv big"><span>Amount</span><b class="mono">${AED(m.amount)}</b></div>
+    <div class="dld-card-row"><span class="dld-mini good">Paid ${NUM(m.paid)}</span><span class="dld-mini warn">Pending ${NUM(m.pending)}</span></div>
+    <div class="dld-card-row"><span class="dld-mini">Files ✓ ${NUM(m.filesDone)}</span><span class="dld-mini">Files ⧗ ${NUM(m.filesPending)}</span></div>
+  </div>`;
+  const list=(arr,isR,empty)=>arr.length?arr.slice().sort((a,b)=>b.amount-a.amount).map(r=>dlClientRow(r,isR)).join(''):`<div class="dld-empty">${empty}</div>`;
+  box.innerHTML = `
+    <div class="dld-bar">
+      <button class="dld-nav" onclick="dlNav(-1)" aria-label="Previous day"><i class="ti ti-chevron-left"></i></button>
+      <input class="dld-date" type="date" value="${dk}" onchange="dlSetDate(this.value)">
+      <button class="dld-nav" onclick="dlNav(1)" aria-label="Next day"><i class="ti ti-chevron-right"></i></button>
+      <button class="dld-today" onclick="dlSetDate(dlToday())">Today</button>
+    </div>
+    ${rawanNote}
+    <div class="dld-daylabel">${dlFmtDay(dk)}</div>
+    <div class="dld-cmp">
+      <div class="dld-cmp-i"><span>Clients Δ</span><b class="${dcls(dC)}">${sgn(dC)}</b></div>
+      <div class="dld-cmp-i"><span>Revenue Δ</span><b class="${dcls(dR)}">${(dR<0?'-':'')+AEDk(Math.abs(dR))}</b></div>
+      <div class="dld-cmp-i"><span>Files ✓ Δ</span><b class="${dcls(dF)}">${sgn(dF)}</b></div>
+    </div>
+    <div class="dld-cards">${card('Sherry','dld-s',sm)}${card('Rawan','dld-r',rm)}</div>
+    <div class="dld-lists">
+      <div class="dld-list"><div class="dld-list-h dld-s-h">Sherry · ${NUM(sm.clients)}</div>${list(sherry,false,'No Sherry clients')}</div>
+      <div class="dld-list"><div class="dld-list-h dld-r-h">Rawan · ${NUM(rm.clients)}</div>${list(rawan,true,'No Rawan clients')}</div>
     </div>`;
-  }).join('');
 }
 
 /* ============ DATA MATCH / RECONCILIATION (hidden/internal, READ-ONLY) ============
