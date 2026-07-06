@@ -141,12 +141,13 @@ async function getRawan(dateKey) {
 }
 
 /* ---------- report building (returns array of message chunks ≤ Telegram limit) ---------- */
-function fileLine(i, r, withOutcome) {
+function fileLine(i, r, withOutcome, tag) {
   const ref = r.ref && r.ref !== '0' ? '#' + esc(r.ref) : '—';
   let s = `${i}) 🕐— · <b>${ref}</b>\n`;
   s += `   ${esc(r.client || '—')}${r.service ? ' · ' + esc(r.service) : ''}\n`;
   s += `   <b>${AED(r.amount)}</b> · ${esc(cap(r.status))} · ${esc(cap(r.fileStatus))}`;
   if (withOutcome && r.outcome) s += ` · ${esc(cap(r.outcome))}`;
+  if (tag) s += `  ${tag}`;
   if (r.notes) s += `\n   📝 ${esc(r.notes)}`;
   return s + '\n';
 }
@@ -158,6 +159,20 @@ function empStats(list) {
   return { files: list.length, clients, completed, pending, revenue };
 }
 function empStatusLine(m) { return !m.files ? 'No activity' : ('Active' + (m.pending ? ` · ${m.pending} pending` : ' · all done')); }
+// Which Rawan files match a confirmed Sherry file (same ATS ref, client name, or phone) → "confirmed".
+function rawanMatchesSherry(sherry) {
+  const norm = x => String(x || '').trim().toLowerCase();
+  const refKey = x => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const phoneKey = x => { const d = String(x || '').replace(/\D/g, ''); return d.length >= 7 ? d.slice(-9) : ''; };
+  const refs = new Set(), names = new Set(), phones = new Set();
+  sherry.forEach(s => { const rf = refKey(s.ref); if (rf && rf !== '0') refs.add(rf); if (norm(s.client)) names.add(norm(s.client)); const ph = phoneKey(s.phone); if (ph) phones.add(ph); });
+  return r => {
+    const rf = refKey(r.ref); if (rf && rf !== '0' && refs.has(rf)) return true;
+    if (norm(r.client) && names.has(norm(r.client))) return true;
+    const ph = phoneKey(r.phone); if (ph && phones.has(ph)) return true;
+    return false;
+  };
+}
 function buildReport(dateKey, label, sherry, rawan, rawanConnected) {
   const SEP = '━━━━━━━━━━━━━━━━━━';
   const s = empStats(sherry), r = empStats(rawan);
@@ -165,13 +180,16 @@ function buildReport(dateKey, label, sherry, rawan, rawanConnected) {
   const allClients = new Set([...sherry, ...rawan].map(x => (x.client || '').trim().toLowerCase()).filter(Boolean)).size;
   const tFiles = s.files + r.files, tCompleted = s.completed + r.completed, tPending = s.pending + r.pending, tRevenue = s.revenue + r.revenue;
   const hasActivity = tFiles > 0;
-  // day + business status (UAE weekend = Sat + Sun)
+  // Rawan split: files matching a Sherry (confirmed) file vs the rest (inquiries / not agreed)
+  const isMatched = rawanMatchesSherry(sherry);
+  const rawanConfirmed = rawan.filter(isMatched), rawanPending = rawan.filter(x => !isMatched(x));
+  // day + status (top summary reflects SHERRY only)
   const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey) || [];
   const d = dm.length ? new Date(+dm[1], +dm[2] - 1, +dm[3]) : new Date();
   const dayName = d.toLocaleDateString('en-GB', { weekday: 'long' });
   const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-  const bizStatus = hasActivity ? 'Working day' : (isWeekend ? 'Weekend — no activity' : 'No activity');
+  const sherryStatus = s.files ? 'Working day' : (isWeekend ? 'Weekend — no Sherry activity' : 'No Sherry activity');
   // best performer by files (tiebreak revenue); N/A when idle
   const best = !hasActivity ? 'N/A' : (s.files > r.files ? 'Sherry' : r.files > s.files ? 'Rawan' : (s.revenue >= r.revenue ? 'Sherry' : 'Rawan'));
   // missing/incomplete records across both staff
@@ -184,22 +202,32 @@ function buildReport(dateKey, label, sherry, rawan, rawanConnected) {
   if (nMethod) miss.push(`${nMethod} missing payment method`);
   const missSummary = miss.length ? miss.join(', ') : 'None';
 
-  const empBlock = (name, list, m, withOutcome) =>
-    `👩‍💼 <b>${name}</b>\n` +
-    `Clients: ${m.clients}\nFiles: ${m.files}\nCompleted: ${m.completed}\nPending: ${m.pending}\nRevenue: ${AED(m.revenue)}\n` +
-    `Status: ${empStatusLine(m)}\n` +
-    (list.length ? '<i>Files:</i>\n' + list.map((x, i) => fileLine(i + 1, x, withOutcome)).join('') : '');
+  const fileList = (list, withOutcome, tag) => list.length
+    ? list.map((x, i) => fileLine(i + 1, x, withOutcome, tag)).join('')
+    : '<i>None.</i>\n';
 
   const report =
     `📅 <b>DAILY OFFICE REPORT</b>\n${esc(dayName)} • ${esc(dateStr)}\n${REPORT_TIME} Asia/Dubai\n` +
-    `${SEP}\n📌 <b>DAILY SUMMARY</b>\n` +
-    `Status: ${esc(bizStatus)}\nClients: ${allClients}\nFiles: ${tFiles}\nCompleted: ${tCompleted}\nPending: ${tPending}\nRevenue: ${AED(tRevenue)}\n` +
-    `${SEP}\n` +
-    empBlock('SHERRY', sherry, s, false) + '\n' +
-    (rawanConnected ? empBlock('RAWAN', rawan, r, true) : `👩‍💼 <b>RAWAN</b>\n<i>Rawan feed not connected.</i>\n`) +
+    // B) DAILY SUMMARY — SHERRY ONLY
+    `${SEP}\n📌 <b>DAILY SUMMARY (Sherry)</b>\n` +
+    `Status: ${esc(sherryStatus)}\nClients: ${s.clients}\nFiles: ${s.files}\nCompleted: ${s.completed}\nPending: ${s.pending}\nRevenue: ${AED(s.revenue)}\n` +
+    // C) SHERRY confirmed/accepted files
+    `${SEP}\n👩‍💼 <b>SHERRY — Confirmed / Accepted</b>  (${s.files} files · ${AED(s.revenue)})\n` +
+    fileList(sherry, false, '') +
+    // D) RAWAN — confirmed (matched in Sherry) first, then pending / not agreed
+    `${SEP}\n👩‍💼 <b>RAWAN</b>\n` +
+    (!rawanConnected ? '<i>Rawan feed not connected.</i>\n' :
+      `\n✅ <b>Confirmed / Accepted</b> — matched in Sherry (${rawanConfirmed.length})\n` +
+      fileList(rawanConfirmed, true, '✅ <i>Confirmed / Accepted</i>') +
+      `\n🟡 <b>Pending / Not Agreed</b> — inquiries, not confirmed business (${rawanPending.length})\n` +
+      fileList(rawanPending, true, '🟡 <i>Pending / Not Agreed</i>')
+    ) +
+    // E) TOTAL DAILY OFFICE — full combined
     `${SEP}\n🏢 <b>TOTAL DAILY OFFICE</b>\n` +
     `Total Clients: ${allClients}\nTotal Files: ${tFiles}\nCompleted: ${tCompleted}\nPending: ${tPending}\nRevenue: ${AED(tRevenue)}\n` +
+    `Rawan confirmed: ${rawanConfirmed.length} · Rawan pending/not agreed: ${rawanPending.length}\n` +
     `Best Performer: ${esc(best)}\nMissing Data: ${esc(missSummary)}\n` +
+    // Reminders
     `${SEP}\n🔔 <b>IMPORTANT REMINDERS</b>\n` +
     `• Check pending payments\n• Follow up unfinished files\n• Make sure Lead Source is filled\n• Make sure Payment Method is filled\n• Review tomorrow's work\n` +
     (hasActivity ? `✅ Scheduler running — report delivered automatically at ${REPORT_TIME}.`
@@ -327,10 +355,13 @@ async function pollCommands() {
   if (!SPREADSHEET_ID) { log('FATAL: SPREADSHEET_ID not set.'); process.exit(1); }
 
   // Dry run — build + print, no Telegram token needed (for testing the data/format)
+  // Optional: --date YYYY-MM-DD to preview any specific day.
   if (has('--dry')) {
-    const which = args.includes('--yesterday') || args[args.indexOf('--dry') + 1] === 'yesterday' ? -1 : 0;
-    const dk = dayKeyDubai(which);
-    const { chunks, sherryN, rawanN } = await makeReport(dk, which ? 'Yesterday' : 'Today');
+    const di = args.indexOf('--date');
+    let dk, lbl;
+    if (di >= 0 && /^\d{4}-\d{2}-\d{2}$/.test(args[di + 1] || '')) { dk = args[di + 1]; lbl = dk; }
+    else { const which = args.includes('--yesterday') || args[args.indexOf('--dry') + 1] === 'yesterday' ? -1 : 0; dk = dayKeyDubai(which); lbl = which ? 'Yesterday' : 'Today'; }
+    const { chunks, sherryN, rawanN } = await makeReport(dk, lbl);
     console.log('\n----- DRY REPORT ' + dk + ' (Sherry ' + sherryN + ', Rawan ' + rawanN + ') -----\n');
     console.log(chunks.join('\n----- (next message) -----\n').replace(/<\/?[^>]+>/g, '')); // strip HTML tags for console
     process.exit(0);
