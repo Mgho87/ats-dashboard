@@ -373,6 +373,18 @@ async function pollCommands() {
   if (has('--today'))     { await sendReport(dayKeyDubai(0), 'Today', CHAT_ID);     process.exit(0); }
   if (has('--yesterday')) { await sendReport(dayKeyDubai(-1), 'Yesterday', CHAT_ID); process.exit(0); }
 
+  // Manual one-shot for a specific day: --send --date YYYY-MM-DD (sends that day's report once).
+  if (has('--send')) {
+    const si = args.indexOf('--date');
+    const sd = args[si + 1] || '';
+    if (si < 0 || !/^\d{4}-\d{2}-\d{2}$/.test(sd)) {
+      log('FATAL: --send requires --date YYYY-MM-DD (e.g. node telegram-report.js --send --date 2026-07-04).');
+      process.exit(1);
+    }
+    await sendReport(sd, sd, CHAT_ID);
+    process.exit(0);
+  }
+
   // Persistent mode: SEND-ONLY daily scheduler (no command polling by default).
   // cPanel/Passenger keeps a Node app alive only if it binds the PORT it provides — so bind a tiny
   // health endpoint. The scheduler runs alongside it in every worker; the exactly-once marker
