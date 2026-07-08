@@ -52,20 +52,77 @@ const S_NAME = process.env.SHEET_SETTINGS || 'Settings';
 const RAWAN_URL = (process.env.RAWAN_GVIZ_URL || process.env.ROWAN_GVIZ_URL || '').trim();
 const TZ = 'Asia/Dubai';
 
-/* ---------- logging (console + bot/bot.log) ---------- */
+/* ---------- clock (override-able for tests: BOT_NOW_OVERRIDE=ISO) ---------- */
+const NOW_OVERRIDE = process.env.BOT_NOW_OVERRIDE ? Date.parse(process.env.BOT_NOW_OVERRIDE) : null;
+function nowMs() { return (NOW_OVERRIDE != null && !isNaN(NOW_OVERRIDE)) ? NOW_OVERRIDE : Date.now(); }
+function nowISO() { return new Date(nowMs()).toISOString(); }
+
+/* ---------- logging (console + bot/bot.log human log + bot/events.log JSON) ---------- */
 const LOG_FILE = path.join(__dirname, 'bot.log');
+const EVENTS_FILE = path.join(__dirname, 'events.log');
+let LOG_WRITE_FAILED = false;
 function log(msg) {
-  const line = '[' + new Date().toISOString() + '] ' + msg;
+  const line = '[' + nowISO() + '] ' + msg;
   console.log(line);
-  try { fs.appendFileSync(LOG_FILE, line + '\n'); } catch (_) {}
+  try { fs.appendFileSync(LOG_FILE, line + '\n'); LOG_WRITE_FAILED = false; }
+  catch (e) { if (!LOG_WRITE_FAILED) { LOG_WRITE_FAILED = true; console.error('LOG WRITE FAILED (' + LOG_FILE + '): ' + e.message); } }
+}
+/* Structured, machine-readable event log — one JSON object per line. Never silent: any write
+ * failure is surfaced on stderr. Every reporting event goes through here (requirement #6). */
+function logEvent(evt, fields) {
+  const rec = Object.assign({ ts: nowISO(), evt: evt, pid: process.pid }, fields || {});
+  let json; try { json = JSON.stringify(rec); } catch (_) { json = JSON.stringify({ ts: nowISO(), evt: evt, pid: process.pid, note: 'unserializable fields' }); }
+  try { fs.appendFileSync(EVENTS_FILE, json + '\n'); } catch (e) { console.error('EVENT WRITE FAILED: ' + e.message); }
+  log(evt + (fields ? ' ' + json : ''));   // mirror into the human log so nothing is hidden
+}
+
+/* ---------- durable state (state.json) — the queue + the monitor (requirements #3,#4,#5) ----------
+ * Atomic write (temp file + rename). Fields:
+ *   lastSuccess : { date, at, messageIds, sherryN, rawanN }   last confirmed Telegram delivery
+ *   pending     : { date, attempts, firstTriedAt, lastTriedAt, lastError }   report owed, not yet delivered
+ *   lastFailure : { date, at, attempts, error }   a day we permanently gave up on (already alerted)
+ *   lastTelegram: { at, ok, description }          most recent Telegram API response
+ *   lastTickAt  : ISO of the most recent tick
+ *   startedAt   : ISO the current persistent process booted (uptime) */
+const STATE_FILE = path.join(__dirname, 'state.json');
+function readState() {
+  try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')) || {}; }
+  catch (e) { if (e.code !== 'ENOENT') log('STATE READ WARN: ' + e.message + ' (starting from empty state)'); return {}; }
+}
+function writeState(st) {
+  const tmp = STATE_FILE + '.' + process.pid + '.tmp';
+  try { fs.writeFileSync(tmp, JSON.stringify(st, null, 2)); fs.renameSync(tmp, STATE_FILE); }
+  catch (e) { log('STATE WRITE FAILED: ' + e.message); try { fs.unlinkSync(tmp); } catch (_) {} }
 }
 
 /* ---------- helpers ---------- */
 const AED = n => 'AED ' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 function dayKeyDubai(offsetDays = 0) {
-  const d = new Date(Date.now() + offsetDays * 86400000);
+  const d = new Date(nowMs() + offsetDays * 86400000);
   return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(d); // YYYY-MM-DD
+}
+/* Dubai wall-clock parts for a given ms (default: now). Used by the scheduler to know the
+ * local hour/minute and today's date key without ambiguity. */
+function dubaiParts(ms) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  }).formatToParts(new Date(ms == null ? nowMs() : ms));
+  const o = {}; for (const p of parts) o[p.type] = p.value;
+  const h = o.hour === '24' ? 0 : +o.hour;
+  return { key: o.year + '-' + o.month + '-' + o.day, h: h, mi: +o.minute, minutes: h * 60 + +o.minute };
+}
+function reportMinutes() { const [H, M] = REPORT_TIME.split(':').map(Number); return (H || 20) * 60 + (M || 0); }
+/* Next occurrence of REPORT_TIME in Asia/Dubai from now — for the monitor's "next scheduled". */
+function nextReportISO() {
+  const dueMin = reportMinutes();
+  for (let off = 0; off <= 1; off++) {
+    const p = dubaiParts(nowMs() + off * 86400000);
+    if (off === 0 && p.minutes >= dueMin) continue;           // today's slot already passed
+    // Build the Dubai-local target time as a UTC instant. Dubai has no DST (fixed +04:00).
+    return new Date(p.key + 'T' + REPORT_TIME.padStart(5, '0') + ':00+04:00').toISOString();
+  }
+  return null;
 }
 function fmtDay(dk) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dk || ''); if (!m) return dk || '';
@@ -243,19 +300,36 @@ function buildReport(dateKey, label, sherry, rawan, rawanConnected) {
   return chunks;
 }
 
-/* ---------- Telegram API ---------- */
+/* ---------- Telegram API ----------
+ * BOT_FAKE_SEND (test-only, never set in production):
+ *   'ok'   → simulate a successful send (returns a fake message_id) without touching Telegram
+ *   'fail' → simulate a transient Telegram error, to exercise retry/backoff/queue/cutoff
+ * When unset, the real Telegram HTTP API is called. */
+const FAKE_SEND = (process.env.BOT_FAKE_SEND || '').trim().toLowerCase();
+let _fakeMsgId = 1000;
 async function tg(method, params) {
+  if (FAKE_SEND) {
+    if (FAKE_SEND === 'fail' && method === 'sendMessage') throw new Error('sendMessage → [FAKE] 429: Too Many Requests');
+    return { ok: true, result: { message_id: ++_fakeMsgId } };
+  }
   const res = await fetch(`https://api.telegram.org/bot${TOKEN}/${method}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params),
   });
   const j = await res.json().catch(() => ({ ok: false, description: 'non-JSON response' }));
-  if (!j.ok) throw new Error(method + ' → ' + (j.description || res.status));
+  if (!j.ok) { const err = new Error(method + ' → ' + (j.description || res.status)); err.telegram = j; err.httpStatus = res.status; throw err; }
   return j;
 }
+/* Sends every chunk; a report is "delivered" only when Telegram confirms ok + a message_id for
+ * each chunk (requirement #3). Returns the message_ids as proof of delivery. */
 async function sendChunks(chatId, chunks) {
+  const ids = [];
   for (const c of chunks) {
-    await tg('sendMessage', { chat_id: chatId, text: c, parse_mode: 'HTML', disable_web_page_preview: true });
+    const j = await tg('sendMessage', { chat_id: chatId, text: c, parse_mode: 'HTML', disable_web_page_preview: true });
+    const id = j && j.result && j.result.message_id;
+    if (!id) throw new Error('sendMessage returned ok but no message_id — delivery unconfirmed');
+    ids.push(id);
   }
+  return ids;
 }
 
 /* ---------- the main action: build + (optionally) send a report for a day ---------- */
@@ -280,51 +354,154 @@ async function sendReport(dateKey, label, chatId) {
   }
 }
 
-/* ---------- atomic exactly-once daily send (Passenger-safe across ALL workers) ----------
- * Passenger runs the app as several worker processes; each runs its own scheduler and wakes at
- * REPORT_TIME. To send the report EXACTLY ONCE, each worker tries to atomically create a per-day
- * marker file with O_EXCL (fs flag 'wx'): only the worker that CREATES it sends; every other worker
- * gets EEXIST and skips silently (logged). Filesystem is shared by all workers, so this is safe. */
+/* ============================================================================
+ * PRODUCTION RELIABILITY ENGINE
+ * ----------------------------------------------------------------------------
+ * Timing is driven by an EXTERNAL cPanel cron job (`--tick` every 5 min), so it
+ * survives Passenger reaping the Node worker. The persistent app runs the SAME
+ * tick on a short interval as a redundant backup. Every tick is idempotent and
+ * self-healing; the durable state.json is the queue + the monitor.
+ * ========================================================================== */
+
+const MAX_RETRY_MIN = Math.max(30, +(process.env.BOT_MAX_RETRY_MIN || 210)); // keep retrying a failing send for this long (from first attempt) before giving up + alerting
+const CATCHUP_MAX_LATE_MIN = Math.max(60, +(process.env.BOT_CATCHUP_MAX_LATE_MIN || 300)); // don't START a report more than this late (avoids stale/fresh-install retroactive sends)
+const STALE_LOCK_MS = Math.max(60000, +(process.env.BOT_STALE_LOCK_MS || 600000)); // reclaim a lock from a crashed tick after 10 min
+const RETRY_BACKOFF_MS = [0, 3000, 9000]; // in-tick exponential backoff between attempts
+
+/* ---------- per-day lock (O_EXCL) — one sender per day across cron + all Passenger workers ---------- */
 function markerPath(dateKey) { return path.join(__dirname, '.sent-' + dateKey); }
-function claimDailySend(dateKey) {
-  try { const fd = fs.openSync(markerPath(dateKey), 'wx'); fs.writeSync(fd, new Date().toISOString() + '\n'); fs.closeSync(fd); return true; }
-  catch (e) { if (e.code === 'EEXIST') return false; throw e; }   // EEXIST → another worker already claimed today
+function acquireLock(dateKey) {
+  try { const fd = fs.openSync(markerPath(dateKey), 'wx'); fs.writeSync(fd, nowISO() + ' pid=' + process.pid + '\n'); fs.closeSync(fd); return true; }
+  catch (e) {
+    if (e.code !== 'EEXIST') throw e;
+    // Lock exists. If it's stale (a previous tick crashed mid-send), reclaim it; else another tick owns it now.
+    try {
+      const ageMs = nowMs() - fs.statSync(markerPath(dateKey)).mtimeMs;
+      if (ageMs > STALE_LOCK_MS) { fs.unlinkSync(markerPath(dateKey)); logEvent('lock_reclaimed', { day: dateKey, ageMs: Math.round(ageMs) }); return acquireLock(dateKey); }
+    } catch (_) {}
+    return false;
+  }
 }
+function releaseLock(dateKey) { try { fs.unlinkSync(markerPath(dateKey)); } catch (_) {} }
 function cleanOldMarkers() {
   const cutoff = dayKeyDubai(-10);
   try { for (const f of fs.readdirSync(__dirname)) { const m = /^\.sent-(\d{4}-\d{2}-\d{2})$/.exec(f); if (m && m[1] < cutoff) { try { fs.unlinkSync(path.join(__dirname, f)); } catch (_) {} } } } catch (_) {}
 }
-async function sendDailyScheduled(dateKey) {
+
+/* ---------- operator alert (best-effort, but never silent — always logged) ---------- */
+async function alertOperator(text) {
+  logEvent('operator_alert', { text: text });
+  try { if ((TOKEN || FAKE_SEND) && CHAT_ID) await tg('sendMessage', { chat_id: CHAT_ID, text: '⚠️ ' + text, disable_web_page_preview: true }); }
+  catch (e) { log('OPERATOR ALERT SEND FAILED: ' + e.message); }
+}
+
+/* ---------- send with in-tick exponential backoff + delivery verification ---------- */
+async function sendWithRetry(dateKey, label) {
+  let lastErr;
+  for (let attempt = 0; attempt < RETRY_BACKOFF_MS.length; attempt++) {
+    if (RETRY_BACKOFF_MS[attempt]) await new Promise(r => setTimeout(r, RETRY_BACKOFF_MS[attempt]));
+    try {
+      logEvent('generate_start', { day: dateKey, attempt: attempt + 1 });
+      const { chunks, sherryN, rawanN } = await makeReport(dateKey, label);
+      logEvent('generated', { day: dateKey, chunks: chunks.length, sherryN, rawanN });
+      logEvent('send_start', { day: dateKey, attempt: attempt + 1, chat: String(CHAT_ID) });
+      const messageIds = await sendChunks(CHAT_ID, chunks);
+      logEvent('telegram_response', { day: dateKey, ok: true, messageIds });
+      return { messageIds, sherryN, rawanN, chunks: chunks.length };
+    } catch (e) {
+      lastErr = e;
+      logEvent('retry', { day: dateKey, attempt: attempt + 1, of: RETRY_BACKOFF_MS.length, error: e.message });
+    }
+  }
+  throw lastErr;
+}
+
+/* ---------- the idempotent, self-healing daily tick (the heart of the system) ----------
+ * Called by cron (--tick), by the persistent backup interval, and once at process start.
+ * "Due" day = today once now ≥ REPORT_TIME, otherwise yesterday (so a server that was down at
+ * 20:00 and returns later still sends the missed report — requirement #5). A day already in
+ * lastSuccess (delivered) or lastFailure (permanently given up + alerted) is skipped. */
+async function tickOnce(reason) {
+  logEvent('tick_start', { reason: reason || 'manual' });
   cleanOldMarkers();
-  if (!claimDailySend(dateKey)) { log(`Daily report ${dateKey} already sent by another worker — skipping (pid ${process.pid}).`); return; }
-  log(`Claimed daily send ${dateKey} (pid ${process.pid} will send).`);
+  const st = readState();
+  st.lastTickAt = nowISO();
+
+  const p = dubaiParts();
+  const dueMin = reportMinutes();
+  const candidate = (p.minutes >= dueMin) ? p.key : dayKeyDubai(-1);
+  // minutes elapsed since the candidate day's REPORT_TIME (handles the "yesterday" wrap)
+  const minsSinceDue = (candidate === p.key) ? (p.minutes - dueMin) : (p.minutes + (1440 - dueMin));
+  const hasPending = !!(st.pending && st.pending.date === candidate);
+
+  if (st.lastSuccess && st.lastSuccess.date === candidate) { logEvent('skip_already_sent', { day: candidate }); writeState(st); return { status: 'already_sent', day: candidate }; }
+  if (st.lastFailure && st.lastFailure.date === candidate) { logEvent('skip_given_up', { day: candidate }); writeState(st); return { status: 'given_up', day: candidate }; }
+  if (minsSinceDue < 0)                                    { logEvent('skip_not_due', { day: candidate, nextAt: nextReportISO() }); writeState(st); return { status: 'not_due', day: candidate }; }
+  // Stale guard: never START a report far past its slot unless we're already mid-retry on it.
+  // Prevents a fresh install (empty state) or a next-morning restart from sending a stale report.
+  if (!hasPending && minsSinceDue > CATCHUP_MAX_LATE_MIN) { logEvent('skip_too_late', { day: candidate, minsSinceDue: Math.round(minsSinceDue), nextAt: nextReportISO() }); writeState(st); return { status: 'too_late', day: candidate }; }
+
+  const isCatchUp = candidate !== p.key || minsSinceDue > 6; // late relative to the exact slot → recovery of a missed run
+  if (isCatchUp) logEvent('recovery', { day: candidate, minsSinceDue: Math.round(minsSinceDue), reason: reason || 'manual' });
+  else           logEvent('due_detected', { day: candidate, minsSinceDue: Math.round(minsSinceDue) });
+
+  if (!acquireLock(candidate)) { logEvent('skip_locked', { day: candidate }); writeState(st); return { status: 'locked', day: candidate }; }
+
+  const firstTriedAt = (hasPending && st.pending.firstTriedAt) || nowISO();
+  const attemptWindowMin = (nowMs() - Date.parse(firstTriedAt)) / 60000;
+  const attempts = ((hasPending && st.pending.attempts) || 0) + 1;
   try {
-    const { chunks, sherryN, rawanN } = await makeReport(dateKey, 'Today');
-    await sendChunks(CHAT_ID, chunks);
-    log(`SENT daily (${dateKey}) → chat ${CHAT_ID} · Sherry ${sherryN} · Rawan ${rawanN} · ${chunks.length} msg(s)`);
+    const r = await sendWithRetry(candidate, isCatchUp ? 'Missed report' : 'Today');
+    st.lastSuccess = { date: candidate, at: nowISO(), messageIds: r.messageIds, sherryN: r.sherryN, rawanN: r.rawanN };
+    st.lastTelegram = { at: nowISO(), ok: true, description: 'delivered ' + r.messageIds.length + ' message(s)' };
+    st.pending = null;
+    writeState(st);
+    logEvent('delivered', { day: candidate, messageIds: r.messageIds, attempts, catchUp: isCatchUp });
+    return { status: 'delivered', day: candidate, messageIds: r.messageIds };
   } catch (e) {
-    log(`SEND FAILED daily (${dateKey}): ${e.message}`);
-    try { fs.unlinkSync(markerPath(dateKey)); log(`Removed marker ${dateKey} so the send can be retried.`); } catch (_) {}
-    try { if (TOKEN && CHAT_ID) await tg('sendMessage', { chat_id: CHAT_ID, text: '⚠️ Daily report failed: ' + e.message }); } catch (_) {}
+    releaseLock(candidate); // let the next tick retry
+    st.lastTelegram = { at: nowISO(), ok: false, description: e.message };
+    st.pending = { date: candidate, attempts, firstTriedAt: firstTriedAt, lastTriedAt: nowISO(), lastError: e.message };
+    if (attemptWindowMin > MAX_RETRY_MIN) {
+      // We've been retrying since firstTriedAt for longer than the give-up window — stop, record the
+      // permanent failure, and alert the operator (once). Retrying restarts fresh only on a new day.
+      st.lastFailure = { date: candidate, at: nowISO(), attempts, error: e.message };
+      st.pending = null;
+      writeState(st);
+      logEvent('permanent_failure', { day: candidate, attempts, error: e.message, retriedForMin: Math.round(attemptWindowMin) });
+      await alertOperator(`Daily report ${candidate} FAILED permanently after ${attempts} attempts over ${Math.round(attemptWindowMin)} min. Last error: ${e.message}`);
+      return { status: 'permanent_failure', day: candidate };
+    }
+    writeState(st);
+    logEvent('queued', { day: candidate, attempts, error: e.message, willRetry: true });
+    return { status: 'queued', day: candidate, attempts, error: e.message };
   }
 }
 
-/* ---------- scheduler (persistent mode): fire once per day at REPORT_TIME_UAE ---------- */
-function msUntilReport() {
-  const [H, M] = REPORT_TIME.split(':').map(Number);
-  const now = new Date();
-  const dubaiNow = new Date(now.toLocaleString('en-US', { timeZone: TZ }));
-  const target = new Date(dubaiNow); target.setHours(H || 20, M || 0, 0, 0);
-  if (target <= dubaiNow) target.setDate(target.getDate() + 1);
-  return target - dubaiNow;
+/* ---------- persistent-mode backup: run the same tick on a short interval + once at start ---------- */
+function startBackupScheduler() {
+  const intervalMs = Math.max(60000, +(process.env.BOT_TICK_INTERVAL_MS || 300000)); // default 5 min
+  log(`Backup scheduler active: tick every ${(intervalMs / 60000).toFixed(0)} min. Report time ${REPORT_TIME} ${TZ}. Next slot ${nextReportISO()}.`);
+  tickOnce('startup').catch(e => log('startup tick error: ' + e.message));                 // catch-up immediately on (re)start
+  setInterval(() => { tickOnce('interval').catch(e => log('interval tick error: ' + e.message)); }, intervalMs);
 }
-function scheduleDaily() {
-  const wait = msUntilReport();
-  log(`Next daily report in ${(wait / 3600000).toFixed(2)}h (at ${REPORT_TIME} ${TZ}).`);
-  setTimeout(async () => {
-    await sendDailyScheduled(dayKeyDubai(0));   // exactly-once across all Passenger workers
-    scheduleDaily();
-  }, wait);
+
+/* ---------- monitoring snapshot (for --status and the dashboard endpoint) ---------- */
+function healthSnapshot() {
+  const st = readState();
+  return {
+    now: nowISO(), timezone: TZ, reportTime: REPORT_TIME,
+    nextScheduled: nextReportISO(),
+    lastSuccess: st.lastSuccess || null,
+    pending: st.pending || null,
+    lastFailure: st.lastFailure || null,
+    lastTelegram: st.lastTelegram || null,
+    lastTickAt: st.lastTickAt || null,
+    startedAt: st.startedAt || null,
+    retryCount: (st.pending && st.pending.attempts) || 0,
+    queueLength: st.pending ? 1 : 0,
+    lastException: (st.lastTelegram && !st.lastTelegram.ok && st.lastTelegram.description) || (st.pending && st.pending.lastError) || null,
+  };
 }
 
 /* ---------- command polling (persistent mode): /today /yesterday /help ---------- */
@@ -367,9 +544,17 @@ async function pollCommands() {
     process.exit(0);
   }
 
+  // Monitoring snapshot — prints the health state as JSON (no Telegram token needed).
+  if (has('--status')) { console.log(JSON.stringify(healthSnapshot(), null, 2)); process.exit(0); }
+
   if (!TOKEN || !CHAT_ID) { log('FATAL: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set (or use --dry).'); process.exit(1); }
 
-  // One-shot modes (ideal for cron)
+  // PRIMARY TRIGGER — run one idempotent, self-healing tick, then exit. This is what cPanel cron
+  // calls every ~5 min. Sends the daily report once REPORT_TIME has passed (and catches up a missed
+  // day), verifies delivery, retries with backoff, queues on failure, and never double-sends.
+  if (has('--tick')) { const r = await tickOnce('cron'); process.exit(r && (r.status === 'permanent_failure') ? 2 : 0); }
+
+  // One-shot modes (manual / legacy cron): send a specific day's report immediately, no dedup/state.
   if (has('--today'))     { await sendReport(dayKeyDubai(0), 'Today', CHAT_ID);     process.exit(0); }
   if (has('--yesterday')) { await sendReport(dayKeyDubai(-1), 'Yesterday', CHAT_ID); process.exit(0); }
 
@@ -385,18 +570,22 @@ async function pollCommands() {
     process.exit(0);
   }
 
-  // Persistent mode: SEND-ONLY daily scheduler (no command polling by default).
-  // cPanel/Passenger keeps a Node app alive only if it binds the PORT it provides — so bind a tiny
-  // health endpoint. The scheduler runs alongside it in every worker; the exactly-once marker
-  // (see sendDailyScheduled) guarantees only ONE worker actually sends the report.
+  // Persistent mode: BACKUP scheduler. cPanel cron (`--tick`) is the PRIMARY trigger; this always-on
+  // app is a redundant safety net that runs the same idempotent tick on a short interval and catches
+  // up immediately on (re)start. Running both is safe — the per-day O_EXCL lock + state.json ensure
+  // the report is sent exactly once. Passenger keeps a Node app alive only while it holds its PORT,
+  // so bind a tiny health endpoint that also exposes the live monitor JSON at /health.
   if (process.env.PORT) {
     try {
-      require('http').createServer((_req, res) => { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ats-bot ok'); })
-        .listen(process.env.PORT, () => log('health server on port ' + process.env.PORT));
+      require('http').createServer((req, res) => {
+        if (req.url && req.url.indexOf('/health') === 0) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(healthSnapshot())); return; }
+        res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ats-bot ok');
+      }).listen(process.env.PORT, () => log('health server on port ' + process.env.PORT + ' (JSON at /health)'));
     } catch (e) { log('health server error: ' + e.message); }
   }
-  log('ALMUTARJEM Telegram bot started (persistent, SEND-ONLY). Report time ' + REPORT_TIME + ' ' + TZ + ' · pid ' + process.pid + '.');
-  scheduleDaily();
+  try { const st = readState(); st.startedAt = nowISO(); writeState(st); } catch (_) {}
+  log('ALMUTARJEM Telegram bot started (persistent BACKUP scheduler; cron is primary). Report time ' + REPORT_TIME + ' ' + TZ + ' · pid ' + process.pid + '.');
+  startBackupScheduler();
 
   // Command polling is DISABLED by default. Under Passenger (multi-worker), each worker would open
   // its own getUpdates poll and Telegram allows only ONE → "Conflict: terminated by other getUpdates".

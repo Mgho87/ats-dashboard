@@ -24,6 +24,9 @@ cloudflared.exe
 .DS_Store
 almutarjem-audit/
 
-# Telegram bot runtime once-per-day markers (created at send time)
+# Telegram bot runtime state — never commit (per-server, regenerated at runtime)
 bot/.sent-*
 .sent-*
+bot/state.json
+bot/state.json.*.tmp
+bot/events.log

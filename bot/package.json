@@ -8,6 +8,8 @@
   "engines": { "node": ">=18.0.0" },
   "scripts": {
     "start": "node telegram-report.js",
+    "tick": "node telegram-report.js --tick",
+    "status": "node telegram-report.js --status",
     "today": "node telegram-report.js --today",
     "yesterday": "node telegram-report.js --yesterday",
     "dry": "node telegram-report.js --dry today"
