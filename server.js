@@ -239,6 +239,62 @@ app.get('/api/rawan', async (_req, res) => {
   }
 });
 
+// Telegram Daily Report health — READ-ONLY monitor. Reads the standalone bot's state.json
+// (written by ~/ats-bot/bot/telegram-report.js). This endpoint NEVER writes and NEVER sends;
+// it only surfaces the bot's own delivery state so the dashboard can show "safe vs at-risk".
+// Path is configurable via BOT_STATE_FILE; default assumes the bot app is ~/ats-bot/bot.
+const BOT_STATE_FILE = process.env.BOT_STATE_FILE || path.join(require('os').homedir(), 'ats-bot', 'bot', 'state.json');
+const REPORT_TIME_UAE = (process.env.REPORT_TIME_UAE || '20:00').trim();
+const REPORT_TZ = 'Asia/Dubai';
+function botReportMinutes() { const [H, M] = REPORT_TIME_UAE.split(':').map(Number); return (H || 20) * 60 + (M || 0); }
+function botDubaiParts(ms) {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: REPORT_TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(ms == null ? Date.now() : ms));
+  const o = {}; for (const p of parts) o[p.type] = p.value; const h = o.hour === '24' ? 0 : +o.hour;
+  return { key: o.year + '-' + o.month + '-' + o.day, minutes: h * 60 + +o.minute };
+}
+function botNextReportISO() {
+  const dueMin = botReportMinutes();
+  for (let off = 0; off <= 1; off++) { const p = botDubaiParts(Date.now() + off * 86400000); if (off === 0 && p.minutes >= dueMin) continue; return new Date(p.key + 'T' + REPORT_TIME_UAE.padStart(5, '0') + ':00+04:00').toISOString(); }
+  return null;
+}
+function reportVerdict(s, tickAgeMin) {
+  const p = botDubaiParts(), dueMin = botReportMinutes();
+  const todayKey = botDubaiParts().key, pastDue = p.minutes >= dueMin;
+  const cronStale = tickAgeMin == null || tickAgeMin > 15; // cron/backup should tick ~every 5 min
+  const todayDelivered = s.lastSuccess && s.lastSuccess.date === todayKey;
+  const todayFailed = s.lastFailure && s.lastFailure.date === todayKey;
+  if (cronStale) return { level: 'bad', label: 'AT RISK — scheduler not running', detail: tickAgeMin == null ? 'No tick has run yet. The cron job and backup app both appear to be down.' : `Last tick ${Math.round(tickAgeMin)} min ago (expected every ~5 min). Cron/app may be down.` };
+  if (todayFailed) return { level: 'bad', label: "AT RISK — today's report failed", detail: 'Gave up after retries. Last error: ' + ((s.lastFailure && s.lastFailure.error) || 'unknown') };
+  if (pastDue && !todayDelivered && s.pending) return { level: 'warn', label: 'RETRYING — today not delivered yet', detail: `Queued, attempt ${s.pending.attempts}. Last error: ${s.pending.lastError || '—'}` };
+  if (pastDue && !todayDelivered) return { level: 'warn', label: 'PENDING — due, not sent yet', detail: 'Waiting for the next tick to deliver today\'s report.' };
+  if (todayDelivered) return { level: 'good', label: "SAFE — today's report delivered", detail: `Delivered ${new Date(s.lastSuccess.at).toLocaleString()} · ${(s.lastSuccess.messageIds || []).length} message(s).` };
+  return { level: 'good', label: 'SAFE — on schedule', detail: `Scheduler healthy. Next report at ${REPORT_TIME_UAE} ${REPORT_TZ}.` };
+}
+app.get('/api/report-health', (_req, res) => {
+  res.set('Cache-Control', 'no-store, must-revalidate');
+  let st = null, available = false, readError = null;
+  try { st = JSON.parse(fs.readFileSync(BOT_STATE_FILE, 'utf8')) || {}; available = true; }
+  catch (e) { if (e.code !== 'ENOENT') readError = e.message; st = {}; }
+  const now = Date.now();
+  const tickAgeMin = st.lastTickAt ? Math.round((now - new Date(st.lastTickAt).getTime()) / 60000) : null;
+  const uptimeMin = st.startedAt ? Math.round((now - new Date(st.startedAt).getTime()) / 60000) : null;
+  const verdict = available ? reportVerdict(st, tickAgeMin) : { level: 'bad', label: 'AT RISK — no data yet', detail: readError ? ('Could not read bot state: ' + readError) : 'The bot has not run yet (state file not found). Start the cron/app.' };
+  res.json({
+    available, readError, stateFile: BOT_STATE_FILE, now: new Date(now).toISOString(),
+    timezone: REPORT_TZ, reportTime: REPORT_TIME_UAE, nextScheduled: botNextReportISO(),
+    verdict,
+    lastSuccess: st.lastSuccess || null,
+    pending: st.pending || null,
+    lastFailure: st.lastFailure || null,
+    lastTelegram: st.lastTelegram || null,
+    lastTickAt: st.lastTickAt || null, tickAgeMin,
+    startedAt: st.startedAt || null, uptimeMin,
+    retryCount: (st.pending && st.pending.attempts) || 0,
+    queueLength: st.pending ? 1 : 0,
+    lastException: (st.lastTelegram && !st.lastTelegram.ok && st.lastTelegram.description) || (st.pending && st.pending.lastError) || (st.lastFailure && st.lastFailure.error) || null,
+  });
+});
+
 // Forensic audit history — full field-level change log (newest first).
 app.get('/api/audit', async (_req, res) => {
   const changes = auditFx.loadHistory();

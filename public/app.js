@@ -1766,6 +1766,52 @@ function rHealth() {
     const t = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dubai', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(e.ts));
     return `<div class="log-row"><span class="lt mono">${t}</span><span class="le">${esc(e.event)}</span><span>${badge2(e.status)}</span><span class="ld">${esc(e.details)}</span></div>`;
   }).join('') || '<div class="empty">No sync events</div>';
+
+  // Telegram Daily Report — read-only monitor (fetched separately; the bot writes state.json).
+  loadReportHealth();
+}
+
+/* ---------------- TELEGRAM DAILY REPORT — read-only health monitor ---------------- */
+function rhWhen(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso); if (isNaN(d)) return esc(iso);
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  const rel = mins < 0 ? 'in ' + Math.abs(mins) + ' min' : mins < 1 ? 'just now' : mins < 90 ? mins + ' min ago' : Math.round(mins / 60) + ' h ago';
+  return `${d.toLocaleString()} <span class="dimv small">(${rel})</span>`;
+}
+function loadReportHealth() {
+  const banner = el('reportHealthBanner'); if (!banner) return;
+  banner.className = 'trust'; banner.innerHTML = '<div class="trust-s">Loading report status…</div>';
+  el('reportHealthKvA').innerHTML = ''; el('reportHealthKvB').innerHTML = '';
+  fetch('/api/report-health', { cache: 'no-store' }).then(r => r.json()).then(h => {
+    const lvl = (h.verdict && h.verdict.level) || 'bad';
+    const ic = lvl === 'good' ? 'ti-shield-check' : lvl === 'warn' ? 'ti-shield-half' : 'ti-shield-x';
+    banner.className = 'trust ' + lvl;
+    banner.innerHTML = `<div class="trust-ic"><i class="ti ${ic}"></i></div><div><div class="trust-t">${esc((h.verdict && h.verdict.label) || 'Unknown')}</div><div class="trust-s">${esc((h.verdict && h.verdict.detail) || '')}</div></div><div class="trust-meta mono">next<br>${h.nextScheduled ? new Date(h.nextScheduled).toLocaleString() : '—'}</div>`;
+
+    const ls = h.lastSuccess, pend = h.pending, tg = h.lastTelegram;
+    const tickPill = h.tickAgeMin == null ? '<span class="pill bad">never</span>'
+      : h.tickAgeMin > 15 ? `<span class="pill bad">${h.tickAgeMin} min ago · stale</span>`
+      : `<span class="pill good">${h.tickAgeMin <= 1 ? 'just now' : h.tickAgeMin + ' min ago'} · active</span>`;
+    el('reportHealthKvA').innerHTML = kv([
+      ['Status', `<span class="pill ${lvl}">${lvl === 'good' ? 'SAFE' : lvl === 'warn' ? 'AT RISK · recovering' : 'AT RISK'}</span>`],
+      ['Last successful report', ls ? `<b>${esc(ls.date)}</b> · ${rhWhen(ls.at)}` : '<span class="pill warn">none yet</span>'],
+      ['Delivered messages', ls ? esc(String((ls.messageIds || []).length)) + ' · Sherry ' + esc(String(ls.sherryN != null ? ls.sherryN : '—')) + ' / Rawan ' + esc(String(ls.rawanN != null ? ls.rawanN : '—')) : '—'],
+      ['Next scheduled report', h.nextScheduled ? rhWhen(h.nextScheduled) : '—'],
+      ['Report time', `${esc(h.reportTime || '20:00')} <span class="dimv small">${esc(h.timezone || 'Asia/Dubai')}</span>`],
+    ]);
+    el('reportHealthKvB').innerHTML = kv([
+      ['Queue / pending', pend ? `<span class="pill warn">1 queued · attempt ${esc(String(pend.attempts))}</span>` : '<span class="pill good">empty</span>'],
+      ['Retry count', `<span class="pill ${h.retryCount ? 'warn' : 'good'}">${esc(String(h.retryCount || 0))}</span>`],
+      ['Last Telegram response', tg ? `<span class="pill ${tg.ok ? 'good' : 'bad'}">${tg.ok ? 'OK' : 'FAILED'}</span> ${esc(tg.description || '')}` : '—'],
+      ['Last error / exception', h.lastException ? `<span class="pill bad">${esc(h.lastException)}</span>` : '<span class="pill good">none</span>'],
+      ['Scheduler (cron/app)', tickPill],
+      ['Process uptime', h.uptimeMin == null ? '—' : (h.uptimeMin >= 60 ? Math.round(h.uptimeMin / 60) + ' h' : h.uptimeMin + ' min')],
+    ]);
+  }).catch(e => {
+    banner.className = 'trust bad';
+    banner.innerHTML = `<div class="trust-ic"><i class="ti ti-shield-x"></i></div><div><div class="trust-t">Monitor unavailable</div><div class="trust-s">Could not reach /api/report-health: ${esc(e.message)}</div></div>`;
+  });
 }
 
 /* ---------------- SETTINGS ---------------- */
