@@ -5,7 +5,9 @@
   "description": "Standalone, read-only Telegram daily-report bot for ALMUTARJEM (Sherry vs Rawan). Self-contained — does not depend on the dashboard at runtime.",
   "main": "telegram-report.js",
   "type": "commonjs",
-  "engines": { "node": ">=18.0.0" },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node telegram-report.js",
     "tick": "node telegram-report.js --tick",
@@ -14,5 +16,7 @@
     "yesterday": "node telegram-report.js --yesterday",
     "dry": "node telegram-report.js --dry today"
   },
-  "dependencies": {}
+  "dependencies": {
+    "sharp": "^0.33.5"
+  }
 }

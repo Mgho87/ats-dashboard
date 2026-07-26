@@ -78,6 +78,29 @@ reaping the worker. Each run is a stateless, **idempotent, self-healing tick**:
    ```
 7. **Update later:** `cd ~/ats-bot && git pull origin feature/mobile-daily-leads` → **Restart**.
 
+## 5b. Daily Office Report IMAGE (PNG) — `DAILY_REPORT_MODE`
+The report can be delivered as ONE professional dashboard **PNG** instead of text.
+- **Modes** (env `DAILY_REPORT_MODE`): `text` (default/rollback, unchanged), `png` (build + send the
+  image), `dry-run` (build + archive the image, no send, no token needed).
+- **Renderer:** the report is generated as an **SVG** and rasterised by **Sharp** (`sharp`, a prebuilt
+  libvips binary — cPanel-safe, no Chromium/Puppeteer). If Sharp is ever unavailable, the same SVG is
+  rasterised by `@resvg/resvg-js` (optional fallback). Install: `npm install` in `~/ats-bot/bot`.
+- **Size:** width fixed at ~2300 px; **height is dynamic** — as tall as needed to show EVERY record.
+  No A4 ratio, no clipping, no "…and more", no font shrinking.
+- **Telegram:** `png` mode sends ONLY the image via `sendPhoto`, automatically falling back to
+  `sendDocument` when the image exceeds Telegram photo limits (width+height > 10000, > 10 MB, or ratio
+  > 20). Content is never trimmed to fit. Caption: `Daily Office Report — <date>`.
+- **Archive:** each render is saved to `bot/archive/Daily_Report_<date>.png` (gitignored).
+- **Test locally:** `node test-report-image.js` renders 10 scenarios (normal, empty, many/tall,
+  missing logo, long Arabic, long English, unmatched, duplicate refs, all pending, all completed).
+
+### Logo (`assets/almutarjem-logo.png`) — accurate note
+The processed logo was background-removed by **edge flood-fill**. It is visually faithful **on a white
+background only**. Some flat white/light *page* pixels became transparent because they were connected to
+the outer background, so **not every interior pixel is preserved** — do **not** place this logo over
+dark or coloured backgrounds; always keep a white logo-safe area behind it (the report header is white
+for this reason). The pristine original is preserved at `assets/almutarjem-logo-original.png`.
+
 ## 6. Monitoring
 - `node telegram-report.js --status` → JSON: last success, next scheduled, pending/queue, retry count,
   last Telegram response, last exception, uptime.

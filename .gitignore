@@ -30,3 +30,5 @@ bot/.sent-*
 bot/state.json
 bot/state.json.*.tmp
 bot/events.log
+# Generated report images (regenerated daily at runtime; per-server)
+bot/archive/

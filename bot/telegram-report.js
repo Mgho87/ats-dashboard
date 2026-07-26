@@ -45,6 +45,10 @@ const compute = require('./lib/compute');
 const TOKEN   = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
 const CHAT_ID = (process.env.TELEGRAM_CHAT_ID || '').trim();
 const REPORT_TIME = (process.env.REPORT_TIME_UAE || '20:00').trim();
+// Output mode: 'text' (legacy text report — default/rollback), 'png' (image report),
+// 'dry-run' (build the image but DO NOT send). Defaults to text so the live report is
+// preserved until the PNG path is validated + the Telegram token is fixed.
+const REPORT_MODE = (process.env.DAILY_REPORT_MODE || 'text').trim().toLowerCase();
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const T_NAME = process.env.SHEET_TRANSACTIONS || 'Transactions';
 const E_NAME = process.env.SHEET_EXPENSES || 'Expenses';
@@ -345,13 +349,69 @@ async function makeReport(dateKey, label) {
 async function sendReport(dateKey, label, chatId) {
   const target = chatId || CHAT_ID;
   try {
-    const { chunks, sherryN, rawanN } = await makeReport(dateKey, label);
-    await sendChunks(target, chunks);
-    log(`SENT ${label} (${dateKey}) → chat ${target} · Sherry ${sherryN} · Rawan ${rawanN} · ${chunks.length} msg(s)`);
+    const out = await deliverReport(dateKey, label, target);
+    log(`SENT ${label} (${dateKey}) → chat ${target} · mode ${out.mode}` + (out.mode === 'text' ? ` · ${out.chunks} msg(s)` : out.image ? ` · ${out.image.width}x${out.image.height}` : ''));
   } catch (e) {
     log(`SEND FAILED ${label} (${dateKey}) → chat ${target}: ${e.message}`);
     try { if (TOKEN && target) await tg('sendMessage', { chat_id: target, text: '⚠️ Daily report failed: ' + e.message }); } catch (_) {}
   }
+}
+
+/* ---------- image report path (DAILY_REPORT_MODE = png | dry-run) ---------- */
+const ARCHIVE_DIR = path.join(__dirname, 'archive');
+async function makeReportImage(dateKey) {
+  const ri = require('./report-image');                        // lazy — text mode never loads sharp
+  let sherry = [], rawanRes = { rows: [] };
+  try { sherry = await getSherry(dateKey); } catch (e) { log('SHEET ERROR (Sherry/' + dateKey + '): ' + e.message); throw e; }
+  try { rawanRes = await getRawan(dateKey); } catch (e) { log('SHEET ERROR (Rawan/' + dateKey + '): ' + e.message); }
+  const model = ri.computeModel(dateKey, sherry, rawanRes.rows);
+  try { fs.mkdirSync(ARCHIVE_DIR, { recursive: true }); } catch (_) {}
+  const outPath = path.join(ARCHIVE_DIR, 'Daily_Report_' + dateKey + '.png');
+  const png = await ri.renderReportPNG(model, outPath);         // { path,width,height,size,renderer,logoOk }
+  return { sherry, rawan: rawanRes.rows, model, png };
+}
+// Upload a PNG via multipart. sendPhoto by default; sendDocument when it exceeds Telegram's
+// photo limits (or on a photo-side rejection) — content is NEVER trimmed to fit.
+async function tgUpload(method, chatId, buf, caption) {
+  if (FAKE_SEND) { if (FAKE_SEND === 'fail') throw new Error(method + ' → [FAKE] 429: Too Many Requests'); return { messageId: ++_fakeMsgId, method }; }
+  const fd = new FormData();
+  fd.append('chat_id', String(chatId));
+  if (caption) fd.append('caption', caption);
+  fd.append(method === 'sendPhoto' ? 'photo' : 'document', new Blob([buf], { type: 'image/png' }), 'Daily_Report.png');
+  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/${method}`, { method: 'POST', body: fd });
+  const j = await res.json().catch(() => ({ ok: false, description: 'non-JSON response' }));
+  if (!j.ok) { const err = new Error(method + ' → ' + (j.description || res.status)); err.telegram = j; throw err; }
+  const id = j.result && j.result.message_id; if (!id) throw new Error(method + ' returned ok but no message_id');
+  return { messageId: id, method };
+}
+async function sendImage(chatId, png, caption) {
+  const buf = fs.readFileSync(png.path);
+  const ratio = Math.max(png.width, png.height) / Math.max(1, Math.min(png.width, png.height));
+  // Telegram photo limits: ≤10 MB, width+height ≤10000, ratio ≤20 → otherwise document.
+  const mustDoc = (png.width + png.height > 10000) || (buf.length > 10 * 1024 * 1024) || (ratio > 20);
+  const first = mustDoc ? 'sendDocument' : 'sendPhoto';
+  try { const r = await tgUpload(first, chatId, buf, caption); return { messageIds: [r.messageId], method: r.method }; }
+  catch (e) {
+    if (first === 'sendPhoto') { logEvent('photo_fallback_document', { reason: e.message }); const r = await tgUpload('sendDocument', chatId, buf, caption); return { messageIds: [r.messageId], method: r.method }; }
+    throw e;
+  }
+}
+// Single delivery entry-point honouring DAILY_REPORT_MODE. Returns { mode, messageIds, ... }.
+async function deliverReport(dateKey, label, chatId) {
+  if (REPORT_MODE === 'text') {
+    const { chunks, sherryN, rawanN } = await makeReport(dateKey, label);
+    const messageIds = await sendChunks(chatId, chunks);
+    return { mode: 'text', messageIds, sherryN, rawanN, chunks: chunks.length };
+  }
+  const { model, png } = await makeReportImage(dateKey);
+  if (REPORT_MODE === 'dry-run') {
+    logEvent('dry_run_image', { day: dateKey, path: png.path, width: png.width, height: png.height, size: png.size, renderer: png.renderer });
+    return { mode: 'dry-run', messageIds: [], image: png, model };
+  }
+  const caption = 'Daily Office Report — ' + model.dateStr;   // png mode
+  const sent = await sendImage(chatId, png, caption);
+  logEvent('image_sent', { day: dateKey, method: sent.method, messageIds: sent.messageIds, width: png.width, height: png.height, size: png.size });
+  return { mode: 'png', messageIds: sent.messageIds, image: png, model, method: sent.method };
 }
 
 /* ============================================================================
@@ -401,13 +461,11 @@ async function sendWithRetry(dateKey, label) {
   for (let attempt = 0; attempt < RETRY_BACKOFF_MS.length; attempt++) {
     if (RETRY_BACKOFF_MS[attempt]) await new Promise(r => setTimeout(r, RETRY_BACKOFF_MS[attempt]));
     try {
-      logEvent('generate_start', { day: dateKey, attempt: attempt + 1 });
-      const { chunks, sherryN, rawanN } = await makeReport(dateKey, label);
-      logEvent('generated', { day: dateKey, chunks: chunks.length, sherryN, rawanN });
-      logEvent('send_start', { day: dateKey, attempt: attempt + 1, chat: String(CHAT_ID) });
-      const messageIds = await sendChunks(CHAT_ID, chunks);
-      logEvent('telegram_response', { day: dateKey, ok: true, messageIds });
-      return { messageIds, sherryN, rawanN, chunks: chunks.length };
+      logEvent('generate_start', { day: dateKey, attempt: attempt + 1, mode: REPORT_MODE });
+      logEvent('send_start', { day: dateKey, attempt: attempt + 1, chat: String(CHAT_ID), mode: REPORT_MODE });
+      const out = await deliverReport(dateKey, label, CHAT_ID);
+      logEvent('telegram_response', { day: dateKey, ok: true, mode: out.mode, messageIds: out.messageIds });
+      return { messageIds: out.messageIds, mode: out.mode, image: out.image };
     } catch (e) {
       lastErr = e;
       logEvent('retry', { day: dateKey, attempt: attempt + 1, of: RETRY_BACKOFF_MS.length, error: e.message });
@@ -547,7 +605,7 @@ async function pollCommands() {
   // Monitoring snapshot — prints the health state as JSON (no Telegram token needed).
   if (has('--status')) { console.log(JSON.stringify(healthSnapshot(), null, 2)); process.exit(0); }
 
-  if (!TOKEN || !CHAT_ID) { log('FATAL: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set (or use --dry).'); process.exit(1); }
+  if (REPORT_MODE !== 'dry-run' && (!TOKEN || !CHAT_ID)) { log('FATAL: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set (or use --dry, or DAILY_REPORT_MODE=dry-run).'); process.exit(1); }
 
   // PRIMARY TRIGGER — run one idempotent, self-healing tick, then exit. This is what cPanel cron
   // calls every ~5 min. Sends the daily report once REPORT_TIME has passed (and catches up a missed
