@@ -133,16 +133,16 @@ function computeModel(dateKey, sherry, rawan) {
   const totalLeads = rawan.length;
   const confirmationRate = totalLeads ? Math.round(rawanAccepted.length / totalLeads * 100) : 0;
 
-  // Page-2 recommendations (practical, data-driven — never generic)
+  // Page-2 recommendations (practical, data-driven — never generic). kind → leading icon.
   const recs = [];
-  if (priority[0]) recs.push(`Contact ${priority[0].client} first — highest open opportunity at ${AED(priority[0].amount)}${priority[0].notes ? ' (' + priority[0].notes + ')' : ''}.`);
+  if (priority[0]) recs.push({ kind: 'call', text: `Contact ${priority[0].client} first — highest open opportunity at ${AED(priority[0].amount)}${priority[0].notes ? ' (' + priority[0].notes + ')' : ''}.` });
   const noResp = follow.filter(r => /no response/i.test(r.outcome));
-  if (noResp.length) recs.push(`Call ${noResp.length} customer(s) with no response${noResp.length ? ': ' + noResp.slice(0, 3).map(r => r.client).join(', ') : ''}.`);
+  if (noResp.length) recs.push({ kind: 'call', text: `Call ${noResp.length} customer(s) with no response: ${noResp.slice(0, 3).map(r => r.client).join(', ')}.` });
   const waiting = follow.filter(r => /question|await|waiting|follow/i.test((r.outcome || '') + ' ' + (r.notes || '')));
-  if (waiting[0]) recs.push(`Send a reminder to ${waiting[0].client} — ${waiting[0].notes || 'awaiting reply'}.`);
-  if (priority.length > 1) recs.push(`Prioritise the top opportunities: ${priority.slice(0, 3).map(r => r.client + ' (' + AED(r.amount) + ')').join(', ')}.`);
-  if (rawanNotInterested.length) recs.push(`${rawanNotInterested.length} customer(s) not interested (${AED(lostValue)} lost) — review objections.`);
-  if (!recs.length) recs.push(totalLeads ? 'All customer replies resolved today — no follow-up outstanding.' : 'No customer activity recorded today.');
+  if (waiting[0]) recs.push({ kind: 'followup', text: `Send a reminder to ${waiting[0].client} — ${waiting[0].notes || 'awaiting reply'}.` });
+  if (priority.length > 1) recs.push({ kind: 'revenue', text: `Prioritise the top opportunities: ${priority.slice(0, 3).map(r => r.client + ' (' + AED(r.amount) + ')').join(', ')}.` });
+  if (rawanNotInterested.length) recs.push({ kind: 'followup', text: `${rawanNotInterested.length} customer(s) not interested (${AED(lostValue)} lost) — review objections.` });
+  if (!recs.length) recs.push({ kind: 'revenue', text: totalLeads ? 'All customer replies resolved today — no follow-up outstanding.' : 'No customer activity recorded today.' });
 
   // Office notes — real operational notes from today's records (deduped)
   const notesSet = [];
@@ -192,9 +192,9 @@ function makeCanvas(logo, opts) {
     const logoH = 150, aspect = 599 / 502, logoW = Math.round(logoH * aspect);
     if (logo.ok) s += `<image x="${PAD}" y="${(H - logoH) / 2 - 3}" height="${logoH}" width="${logoW}" href="${logo.uri}"/>`;
     else s += T(PAD, H / 2 + 6, 'ALMUTARJEM', { size: 54, weight: 800, fill: C.blue });
-    const tx = PAD + (logo.ok ? logoW + 44 : 360);
-    s += T(tx, 94, title, { size: 56, weight: 800, fill: C.blue });
-    s += T(tx, 142, 'ALMUTARJEM TRANSLATION SERVICES', { size: 30, weight: 700, fill: C.muted });
+    // Title block visually centered across the page: LOGO (left) | TITLE (centre) | DATE (right)
+    s += T(W / 2, 94, title, { size: 56, weight: 800, fill: C.blue, anchor: 'middle' });
+    s += T(W / 2, 142, 'ALMUTARJEM TRANSLATION SERVICES', { size: 30, weight: 700, fill: C.muted, anchor: 'middle' });
     s += T(W - PAD, 82, `${model.dayName}, ${model.dateStr}`, { size: 32, weight: 700, fill: C.ink, anchor: 'end' });
     s += T(W - PAD, 122, 'Report time 20:00 GST', { size: 28, fill: C.muted, anchor: 'end' });
     const cw = pageLabel.length * 16 + 44;
@@ -217,11 +217,11 @@ function makeCanvas(logo, opts) {
     cards.forEach((c, i) => {
       const cx = (i % cols) * (cardW + gap), cy = Math.floor(i / cols) * (cardH + gap);
       s += `<rect x="${cx}" y="${cy}" width="${cardW}" height="${cardH}" rx="16" fill="${C.soft}" stroke="${C.line}"/>`;
-      s += `<rect x="${cx + 24}" y="${cy + 32}" width="72" height="72" rx="15" fill="${c.accent}"/>`;
-      s += T(cx + 24 + 36, cy + 32 + 48, c.ic, { size: 38, weight: 800, fill: '#fff', anchor: 'middle' });
-      s += T(cx + 120, cy + 68, String(c.value), { size: 48, weight: 800, fill: C.ink });
-      s += T(cx + 120, cy + 108, c.label.toUpperCase(), { size: 26, weight: 700, fill: C.muted });
-      if (c.sub) s += T(cx + 120, cy + 138, c.sub, { size: 23, fill: C.muted });
+      s += `<rect x="${cx + 24}" y="${cy + 30}" width="80" height="80" rx="16" fill="${c.accent}"/>`;
+      s += T(cx + 24 + 40, cy + 30 + 52, c.ic, { size: 42, weight: 800, fill: '#fff', anchor: 'middle' });
+      s += T(cx + 126, cy + 68, String(c.value), { size: 53, weight: 800, fill: C.ink });
+      s += T(cx + 126, cy + 108, c.label.toUpperCase(), { size: 27, weight: 800, fill: '#4A566B' });
+      if (c.sub) s += T(cx + 126, cy + 137, c.sub, { size: 23, fill: C.muted });
     });
     push(s, rows * cardH + (rows - 1) * gap + SEPY);
   }
@@ -229,7 +229,7 @@ function makeCanvas(logo, opts) {
   function pipeCards(cards) {
     const cols = cards.length, gap = 22, cardW = (CW - gap * (cols - 1)) / cols, cardH = 138;
     let s = '';
-    cards.forEach((c, i) => { const cx = i * (cardW + gap); s += `<rect x="${cx}" y="0" width="${cardW}" height="${cardH}" rx="16" fill="${c.fill}"/>`; s += T(cx + 30, 56, c.label.toUpperCase(), { size: 27, weight: 700, fill: '#fff' }); s += T(cx + 30, 110, c.value, { size: 48, weight: 800, fill: '#fff' }); });
+    cards.forEach((c, i) => { const cx = i * (cardW + gap); s += `<rect x="${cx}" y="0" width="${cardW}" height="${cardH}" rx="16" fill="${c.fill}"/>`; s += T(cx + 30, 54, c.label.toUpperCase(), { size: 27, weight: 700, fill: '#fff' }); s += T(cx + 30, 112, c.value, { size: 54, weight: 800, fill: '#fff' }); });
     push(s, cardH + SEPY);
   }
 
@@ -328,13 +328,13 @@ function buildPage1SVG(model, logo) {
 
   cv.pushSec('1', "Today's Files (Sherry)", model.kpi.files + ' file(s) received');
   cv.table([
-    { title: '#', w: 70, cell: r => ({ text: String(r._i), fill: C.muted, bold: true }) },
-    { title: 'Client', w: 420, cell: r => ({ text: r.client || '—', bold: true }) },
-    { title: 'ATS / Ref', w: 360, cell: r => ({ text: (r.ref && r.ref !== '0') ? r.ref : '—', mono: true, fill: C.muted }) },
+    { title: '#', w: 62, cell: r => ({ text: String(r._i), fill: C.muted, bold: true }) },
+    { title: 'Client', w: 396, cell: r => ({ text: r.client || '—', bold: true }) },
+    { title: 'ATS / Ref', w: 338, cell: r => ({ text: (r.ref && r.ref !== '0') ? r.ref : '—', mono: true, fill: C.muted }) },
     { title: 'Type', w: 340, cell: r => ({ text: r.service || '—' }) },
-    { title: 'Language', w: 340, cell: r => ({ text: r.notes || '—' }) },
-    { title: 'Amount', w: 300, align: 'right', cell: r => ({ text: AED(r.amount), bold: true }) },
-    { title: 'Status', w: CW - 70 - 420 - 360 - 340 - 340 - 300, cell: r => ({ pills: [{ label: r.status, cls: payClass(r.status) }, { label: r.fileStatus, cls: fileClass(r.fileStatus) }] }) },
+    { title: 'Language', w: 402, cell: r => ({ text: r.notes || '—' }) },
+    { title: 'Amount', w: 296, align: 'right', cell: r => ({ text: AED(r.amount), bold: true }) },
+    { title: 'Status', w: CW - 62 - 396 - 338 - 340 - 402 - 296, cell: r => ({ pills: [{ label: r.status, cls: payClass(r.status) }, { label: r.fileStatus, cls: fileClass(r.fileStatus) }] }) },
   ], model.sherry.map((r, i) => Object.assign({ _i: i + 1 }, r)), { empty: 'No Sherry files received today.' });
   cv.spacer(cv.SEPY);
 
@@ -355,8 +355,8 @@ function buildPage1SVG(model, logo) {
       `${AED(K.revenue)} confirmed revenue today`,
       `${model.rawanAccepted.length} customer(s) confirmed / accepted`,
     ];
-    let inner = ''; let yy = 36; b.forEach(l => { inner += T(0, yy, '•  ' + l, { size: 30 }); yy += 50; });
-    cv.panel(inner, yy - 26, { gap: 20 });
+    let inner = ''; let yy = 34; b.forEach(l => { inner += T(0, yy, '•  ' + l, { size: 30 }); yy += 46; });
+    cv.panel(inner, yy - 34, { gap: 18 });
   }
   cv.push(T(0, 32, 'ALMUTARJEM Translation Services · Daily Operations · Page 1 of 2 · Key figures from Sherry (master).', { size: 24, fill: C.muted }), 52);
   return cv.assemble();
@@ -369,13 +369,14 @@ function buildPage2SVG(model, logo) {
   const cv = makeCanvas(logo, { compact: true }), A = model.analysis, R = model.revenue;
   cv.header('Follow-up & Sales Dashboard', 'Page 2 of 2 · Follow-up', model);
 
-  cv.pushSec('1', 'Pending Customer Confirmation', model.rawanPending.length + ' awaiting reply');
+  // Merged "Pending Confirmation + Follow-Up" — one action list (was two duplicate sections)
+  cv.pushSec('1', 'Pending Confirmation & Follow-Up', model.rawanPending.length + ' awaiting reply — all shown');
   cv.table([
-    { title: '#', w: 70, cell: r => ({ text: String(r._i), fill: C.muted, bold: true }) },
-    { title: 'Client', w: 640, cell: r => ({ text: r.client || '—', bold: true }) },
-    { title: 'Amount', w: 320, align: 'right', cell: r => ({ text: AED(r.amount), bold: true }) },
-    { title: 'Status', w: 380, cell: r => ({ pills: [{ label: r.outcome || r.status || 'Pending', cls: outcomeClass(r.outcome) }] }) },
-    { title: 'Reason', w: CW - 70 - 640 - 320 - 380, cell: r => ({ text: r.notes || '—' }) },
+    { title: '#', w: 66, cell: r => ({ text: String(r._i), fill: C.muted, bold: true }) },
+    { title: 'Client', w: 620, cell: r => ({ text: r.client || '—', bold: true }) },
+    { title: 'Amount', w: 300, align: 'right', cell: r => ({ text: AED(r.amount), bold: true }) },
+    { title: 'Latest Status', w: 380, cell: r => ({ pills: [{ label: r.outcome || r.status || 'Pending', cls: outcomeClass(r.outcome) }] }) },
+    { title: 'Reason', w: CW - 66 - 620 - 300 - 380, cell: r => ({ text: r.notes || '—' }) },
   ], model.rawanPending.map((r, i) => Object.assign({ _i: i + 1 }, r)), { empty: 'No customers awaiting confirmation. ✔' });
   cv.spacer(cv.SEPY);
 
@@ -388,17 +389,7 @@ function buildPage2SVG(model, logo) {
   ], model.rawanNotInterested.map((r, i) => Object.assign({ _i: i + 1 }, r)), { empty: 'No customers marked not interested. ✔' });
   cv.spacer(cv.SEPY);
 
-  cv.pushSec('3', 'Customer Follow-Up', 'action list — all shown');
-  cv.table([
-    { title: '#', w: 70, cell: r => ({ text: String(r._i), fill: C.muted, bold: true }) },
-    { title: 'Client', w: 560, cell: r => ({ text: r.client || '—', bold: true }) },
-    { title: 'Amount', w: 300, align: 'right', cell: r => ({ text: AED(r.amount), bold: true }) },
-    { title: 'Reason', w: 660, cell: r => ({ text: r.notes || '—' }) },
-    { title: 'Latest Status', w: CW - 70 - 560 - 300 - 660, cell: r => ({ pills: [{ label: r.outcome || r.status || 'Pending', cls: outcomeClass(r.outcome) }] }) },
-  ], model.follow.map((r, i) => Object.assign({ _i: i + 1 }, r)), { empty: 'No follow-ups outstanding. ✔' });
-  cv.spacer(cv.SEPY);
-
-  cv.pushSec('4', 'High Priority', 'highest-value opportunities');
+  cv.pushSec('3', 'High Priority', 'highest-value opportunities');
   cv.table([
     { title: 'Rank', w: 120, cell: r => ({ text: String(r._i), bold: true, fill: C.red }) },
     { title: 'Client', w: 620, cell: r => ({ text: r.client || '—', bold: true }) },
@@ -409,7 +400,7 @@ function buildPage2SVG(model, logo) {
   cv.spacer(cv.SEPY);
 
   // Business Analysis (left) + Validation (right) side-by-side to save height
-  cv.pushSec('5', 'Business Analysis & Validation');
+  cv.pushSec('4', 'Business Analysis & Validation');
   { const iw = cv.colInnerW();
     const aLines = [
       `Confirmation rate: ${A.confirmationRate}% (${A.accepted}/${A.totalLeads} replies)`,
@@ -425,19 +416,27 @@ function buildPage2SVG(model, logo) {
     cv.twoColPanels({ inner: aInner, h: ay - 14 }, { inner: vInner, h: vy - 14, accent: vc });
   }
 
-  cv.pushSec('6', 'AI Recommendations');
-  { let inner = T(0, 28, '◆ GENERATED FROM TODAY\'S DATA', { size: 24, weight: 800, fill: C.purple }); let yy = 72;
-    model.recs.forEach(r => { const lines = cv.wrap('•  ' + r, Math.floor(cv.maxChars(CW - 36, 29) * (hasArabic(r) ? 0.8 : 1))); lines.forEach((ln, li) => { inner += lineT(li ? 34 : 0, CW - 36, yy, ln, { size: 29 }); yy += 40; }); yy += 8; });
-    cv.panel(inner, yy - 20, { accent: C.purple });
+  cv.pushSec('5', 'AI Recommendations');
+  { const ICN = { call: { g: '☎', c: C.blue2 }, revenue: { g: '◆', c: C.purple }, followup: { g: '⚠', c: C.orange } };
+    let inner = T(0, 28, '◆ GENERATED FROM TODAY\'S DATA', { size: 24, weight: 800, fill: C.purple }); let yy = 74;
+    const textX = 52;
+    model.recs.forEach(r => {
+      const ic = ICN[r.kind] || ICN.revenue;
+      inner += T(0, yy, ic.g, { size: 30, weight: 800, fill: ic.c });                       // leading category icon
+      const lines = cv.wrap(r.text, Math.floor(cv.maxChars(CW - 36 - textX, 29) * (hasArabic(r.text) ? 0.8 : 1)));
+      lines.forEach((ln, li) => { inner += lineT(textX, CW - 36, yy, ln, { size: 29 }); yy += 40; });
+      yy += 12;
+    });
+    cv.panel(inner, yy - 24, { accent: C.purple });
   }
 
   // Office Notes in TWO columns (compact) — keeps every note, half the height
-  cv.pushSec('7', 'Office Notes', model.officeNotes.length + ' note(s)');
+  cv.pushSec('6', 'Office Notes', model.officeNotes.length + ' note(s)');
   { const notes = model.officeNotes; const iw = cv.colInnerW();
     if (!notes.length) { cv.panel(T(0, 30, 'No operational notes recorded today.', { size: 28, fill: C.muted }), 36); }
     else {
       const mid = Math.ceil(notes.length / 2), cols = [notes.slice(0, mid), notes.slice(mid)];
-      const colSvg = list => { let s = '', y = 28; list.forEach(n => { const t = n.who + ' — ' + n.note; cv.wrap('• ' + t, Math.floor(cv.maxChars(iw, 28) * (hasArabic(t) ? 0.8 : 1))).forEach((ln, li) => { s += lineT(li ? 22 : 0, iw, y, ln, { size: 28 }); y += 38; }); }); return { s, h: y - 14 }; };
+      const colSvg = list => { let s = '', y = 30; list.forEach(n => { const t = n.who + ' — ' + n.note; const wr = cv.wrap(t, Math.floor(cv.maxChars(iw - 28, 28) * (hasArabic(t) ? 0.8 : 1))); wr.forEach((ln, li) => { if (li === 0) s += T(0, y, '•', { size: 28, weight: 800, fill: C.blue2 }); s += lineT(28, iw, y, ln, { size: 28 }); y += 40; }); y += 12; }); return { s, h: y - 22 }; };
       const L = colSvg(cols[0]), Rr = colSvg(cols[1]);
       cv.twoColPanels({ inner: L.s, h: L.h }, { inner: Rr.s, h: Rr.h });
     }
