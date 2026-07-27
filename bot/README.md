@@ -79,7 +79,16 @@ reaping the worker. Each run is a stateless, **idempotent, self-healing tick**:
 7. **Update later:** `cd ~/ats-bot && git pull origin feature/mobile-daily-leads` → **Restart**.
 
 ## 5b. Daily Office Report IMAGE (PNG) — `DAILY_REPORT_MODE`
-The report can be delivered as ONE professional dashboard **PNG** instead of text.
+The report is delivered as **TWO** professional dashboard PNGs (sent in order) instead of text:
+- **Page 1 — Daily Operations Dashboard** ("what happened today"): Sherry KPIs, revenue summary,
+  today's files table (Sherry pending = pending *payment/processing*, kept here), confirmed/accepted
+  customer replies, and a short daily summary. Archived as `Daily_Report_<date>_p1.png`.
+- **Page 2 — Follow-up & Sales Dashboard** ("what to do next"): pending customer confirmation, not
+  interested, customer follow-up, high priority (by value), business analysis, data-driven AI
+  recommendations, office notes, validation. Archived as `Daily_Report_<date>_p2.png`.
+
+Both pages together hold ALL data (nothing removed, only reorganized). Each page is sent as its own
+image with caption `Daily Office Report — <date> · Page N/2 · <title>`.
 - **Modes** (env `DAILY_REPORT_MODE`): `text` (default/rollback, unchanged), `png` (build + send the
   image), `dry-run` (build + archive the image, no send, no token needed).
 - **Renderer:** the report is generated as an **SVG** and rasterised by **Sharp** (`sharp`, a prebuilt

@@ -350,7 +350,8 @@ async function sendReport(dateKey, label, chatId) {
   const target = chatId || CHAT_ID;
   try {
     const out = await deliverReport(dateKey, label, target);
-    log(`SENT ${label} (${dateKey}) → chat ${target} · mode ${out.mode}` + (out.mode === 'text' ? ` · ${out.chunks} msg(s)` : out.image ? ` · ${out.image.width}x${out.image.height}` : ''));
+    const detail = out.mode === 'text' ? ` · ${out.chunks} msg(s)` : out.pages ? ' · ' + out.pages.map(p => 'p' + p.page + ' ' + p.width + 'x' + p.height).join(', ') : '';
+    log(`SENT ${label} (${dateKey}) → chat ${target} · mode ${out.mode}${detail}`);
   } catch (e) {
     log(`SEND FAILED ${label} (${dateKey}) → chat ${target}: ${e.message}`);
     try { if (TOKEN && target) await tg('sendMessage', { chat_id: target, text: '⚠️ Daily report failed: ' + e.message }); } catch (_) {}
@@ -366,9 +367,8 @@ async function makeReportImage(dateKey) {
   try { rawanRes = await getRawan(dateKey); } catch (e) { log('SHEET ERROR (Rawan/' + dateKey + '): ' + e.message); }
   const model = ri.computeModel(dateKey, sherry, rawanRes.rows);
   try { fs.mkdirSync(ARCHIVE_DIR, { recursive: true }); } catch (_) {}
-  const outPath = path.join(ARCHIVE_DIR, 'Daily_Report_' + dateKey + '.png');
-  const png = await ri.renderReportPNG(model, outPath);         // { path,width,height,size,renderer,logoOk }
-  return { sherry, rawan: rawanRes.rows, model, png };
+  const pages = await ri.renderReportPages(model, ARCHIVE_DIR, dateKey);   // [{page,path,width,height,size,renderer,logoOk}, ...]
+  return { sherry, rawan: rawanRes.rows, model, pages };
 }
 // Upload a PNG via multipart. sendPhoto by default; sendDocument when it exceeds Telegram's
 // photo limits (or on a photo-side rejection) — content is NEVER trimmed to fit.
@@ -403,15 +403,21 @@ async function deliverReport(dateKey, label, chatId) {
     const messageIds = await sendChunks(chatId, chunks);
     return { mode: 'text', messageIds, sherryN, rawanN, chunks: chunks.length };
   }
-  const { model, png } = await makeReportImage(dateKey);
+  const { model, pages } = await makeReportImage(dateKey);
   if (REPORT_MODE === 'dry-run') {
-    logEvent('dry_run_image', { day: dateKey, path: png.path, width: png.width, height: png.height, size: png.size, renderer: png.renderer });
-    return { mode: 'dry-run', messageIds: [], image: png, model };
+    pages.forEach(p => logEvent('dry_run_image', { day: dateKey, page: p.page, path: p.path, width: p.width, height: p.height, size: p.size, renderer: p.renderer }));
+    return { mode: 'dry-run', messageIds: [], pages, model };
   }
-  const caption = 'Daily Office Report — ' + model.dateStr;   // png mode
-  const sent = await sendImage(chatId, png, caption);
-  logEvent('image_sent', { day: dateKey, method: sent.method, messageIds: sent.messageIds, width: png.width, height: png.height, size: png.size });
-  return { mode: 'png', messageIds: sent.messageIds, image: png, model, method: sent.method };
+  // png mode: send BOTH pages (Operations, then Follow-up). Content is never merged/trimmed.
+  const titles = { 1: 'Daily Operations', 2: 'Follow-up & Sales' };
+  const messageIds = [], methods = [];
+  for (const p of pages) {
+    const caption = 'Daily Office Report — ' + model.dateStr + ' · Page ' + p.page + '/' + pages.length + ' · ' + (titles[p.page] || '');
+    const sent = await sendImage(chatId, p, caption);
+    messageIds.push(...sent.messageIds); methods.push(sent.method);
+    logEvent('image_sent', { day: dateKey, page: p.page, method: sent.method, messageIds: sent.messageIds, width: p.width, height: p.height, size: p.size });
+  }
+  return { mode: 'png', messageIds, pages, model, method: methods.join('+') };
 }
 
 /* ============================================================================
@@ -465,7 +471,7 @@ async function sendWithRetry(dateKey, label) {
       logEvent('send_start', { day: dateKey, attempt: attempt + 1, chat: String(CHAT_ID), mode: REPORT_MODE });
       const out = await deliverReport(dateKey, label, CHAT_ID);
       logEvent('telegram_response', { day: dateKey, ok: true, mode: out.mode, messageIds: out.messageIds });
-      return { messageIds: out.messageIds, mode: out.mode, image: out.image };
+      return { messageIds: out.messageIds, mode: out.mode, pages: out.pages };
     } catch (e) {
       lastErr = e;
       logEvent('retry', { day: dateKey, attempt: attempt + 1, of: RETRY_BACKOFF_MS.length, error: e.message });

@@ -40,36 +40,30 @@ scenarios['9-all-pending'] = { date: '2026-07-11', sherry: [S({ ref: 'P1', clien
 // 10 all completed
 scenarios['10-all-completed'] = { date: '2026-07-12', sherry: [S({ ref: 'D1', client: 'Done One', amount: 100 }), S({ ref: 'D2', client: 'Done Two', amount: 200 })], rawan: [R({ client: 'Done One', amount: 100, status: 'Paid', fileStatus: 'Delivered', outcome: 'Accepted' })] };
 
+async function renderCase(name, sc, opts) {
+  const model = ri.computeModel(sc.date, sc.sherry, sc.rawan);
+  let pages, err = null;
+  try { pages = await ri.renderReportPages(model, OUT, name, opts); } catch (e) { err = e.message; }
+  const p1 = pages && pages.find(p => p.page === 1), p2 = pages && pages.find(p => p.page === 2);
+  return { name, ok: !err && !!p1 && !!p2, err,
+    p1: p1 ? p1.width + 'x' + p1.height : '-', p2: p2 ? p2.width + 'x' + p2.height : '-',
+    renderer: p1 ? p1.renderer : '-', logo: p1 ? p1.logoOk : '-',
+    recon: model.recon,
+    acc: model.rawanAccepted.length, pend: model.rawanPending.length, lost: model.rawanNotInterested.length,
+    conf: model.revenue.confirmed, pot: model.revenue.potential, tot: model.revenue.total, valid: model.validation.ok };
+}
+
 (async () => {
   const results = [];
-  // 4 missing logo — render scenario 1 with a bad logo path
-  const order = Object.keys(scenarios);
-  for (const name of order) {
-    const sc = scenarios[name];
-    const model = ri.computeModel(sc.date, sc.sherry, sc.rawan);
-    const outPath = path.join(OUT, name + '.png');
-    let png, err = null;
-    try { png = await ri.renderReportPNG(model, outPath); } catch (e) { err = e.message; }
-    results.push({ name, ok: !err, err, dims: png ? png.width + 'x' + png.height : '-', kb: png ? (png.size / 1024).toFixed(0) : '-', renderer: png ? png.renderer : '-', logo: png ? png.logoOk : '-',
-      recon: model.recon, conf: model.pipeline.confirmed, pot: model.pipeline.potential, tot: model.pipeline.total, valid: model.validation.ok });
-  }
-  // 4 missing-logo variant
-  {
-    const sc = scenarios['1-normal']; const model = ri.computeModel(sc.date, sc.sherry, sc.rawan);
-    const outPath = path.join(OUT, '4-missing-logo.png');
-    let png, err = null;
-    try { png = await ri.renderReportPNG(model, outPath, { logoPath: path.join(__dirname, 'assets', 'NO_SUCH_LOGO.png') }); } catch (e) { err = e.message; }
-    results.push({ name: '4-missing-logo', ok: !err, err, dims: png ? png.width + 'x' + png.height : '-', kb: png ? (png.size / 1024).toFixed(0) : '-', renderer: png ? png.renderer : '-', logo: png ? png.logoOk : '-', recon: model.recon, conf: model.pipeline.confirmed, pot: model.pipeline.potential, tot: model.pipeline.total, valid: model.validation.ok });
-  }
+  for (const name of Object.keys(scenarios)) results.push(await renderCase(name, scenarios[name]));
+  results.push(await renderCase('4-missing-logo', scenarios['1-normal'], { logoPath: path.join(__dirname, 'assets', 'NO_SUCH_LOGO.png') }));
   results.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  console.log('\nSCENARIO             OK   DIMS         KB    LOGO  MATCH/UNM/AMB/DUP     CONF/POT/TOTAL          VALID');
+  console.log('\nSCENARIO             OK   PAGE1(ops)   PAGE2(f/u)   LOGO  ACC/PEND/LOST   M/U/A/D        CONF/POT/TOTAL         VALID');
   for (const r of results) {
-    const rc = `${r.recon.matched}/${r.recon.unmatched}/${r.recon.ambiguous}/${r.recon.duplicates}`;
-    const fin = `${r.conf}/${r.pot}/${r.tot}`;
-    console.log(`${r.name.padEnd(20)} ${(r.ok ? 'YES' : 'NO ')}  ${String(r.dims).padEnd(12)} ${String(r.kb).padEnd(5)} ${String(r.logo).padEnd(5)} ${rc.padEnd(21)} ${fin.padEnd(23)} ${r.valid}` + (r.err ? '  ERR:' + r.err : ''));
+    console.log(`${r.name.padEnd(20)} ${(r.ok ? 'YES' : 'NO ')}  ${String(r.p1).padEnd(12)} ${String(r.p2).padEnd(12)} ${String(r.logo).padEnd(5)} ${(r.acc + '/' + r.pend + '/' + r.lost).padEnd(15)} ${(r.recon.matched + '/' + r.recon.unmatched + '/' + r.recon.ambiguous + '/' + r.recon.duplicates).padEnd(14)} ${(r.conf + '/' + r.pot + '/' + r.tot).padEnd(22)} ${r.valid}` + (r.err ? '  ERR:' + r.err : ''));
   }
   const fails = results.filter(r => !r.ok);
-  console.log('\n' + results.length + ' scenarios · ' + (results.length - fails.length) + ' passed · ' + fails.length + ' failed');
+  console.log('\n' + results.length + ' scenarios · ' + (results.length - fails.length) + ' passed · ' + fails.length + ' failed (each renders 2 pages)');
   console.log('output dir:', OUT);
   process.exit(fails.length ? 1 : 0);
 })();
