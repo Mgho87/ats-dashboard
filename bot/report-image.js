@@ -178,9 +178,11 @@ function loadLogo(logoPath) {
   catch (_) { return { uri: null, ok: false }; }
 }
 
-function makeCanvas(logo) {
+function makeCanvas(logo, opts) {
+  opts = opts || {};
+  const cpt = !!opts.compact;
   const blocks = [];
-  const SEPY = 34;
+  const SEPY = cpt ? 16 : 34;
   const push = (svg, h, x) => blocks.push({ svg, h, x: x == null ? PAD : x });
   const spacer = h => push('', h);
 
@@ -201,12 +203,12 @@ function makeCanvas(logo) {
   }
 
   function pushSec(num, title, tag) {
-    const h = 66; let s = '';
-    s += `<rect x="0" y="8" width="46" height="46" rx="10" fill="${C.blue}"/>` + T(23, 41, String(num), { size: 26, weight: 800, fill: '#fff', anchor: 'middle' });
-    s += T(60, 42, title, { size: 34, weight: 800, fill: C.blue });
-    if (tag) s += T(CW, 42, tag, { size: 24, weight: 600, fill: C.muted, anchor: 'end' });
+    const h = cpt ? 50 : 66, bs = cpt ? 40 : 46, tf = cpt ? 30 : 34; let s = '';
+    s += `<rect x="0" y="6" width="${bs}" height="${bs}" rx="9" fill="${C.blue}"/>` + T(bs / 2, cpt ? 34 : 41, String(num), { size: cpt ? 23 : 26, weight: 800, fill: '#fff', anchor: 'middle' });
+    s += T(bs + 14, cpt ? 36 : 42, title, { size: tf, weight: 800, fill: C.blue });
+    if (tag) s += T(CW, cpt ? 36 : 42, tag, { size: cpt ? 22 : 24, weight: 600, fill: C.muted, anchor: 'end' });
     s += `<rect x="0" y="${h - 4}" width="${CW}" height="3" fill="${C.line}"/>`;
-    push(s, h + 14);
+    push(s, h + (cpt ? 6 : 14));
   }
 
   function kpiGrid(cards) {
@@ -232,10 +234,11 @@ function makeCanvas(logo) {
   }
 
   function table(cols, rows, o) {
-    o = o || {}; const fs2 = o.size || 26, lh = Math.round(fs2 * 1.28), padY = 16, headH = 54;
+    o = o || {}; const fs2 = o.size || (cpt ? 24 : 26), lh = Math.round(fs2 * (cpt ? 1.2 : 1.28)), padY = cpt ? 9 : 16, headH = cpt ? 44 : 54;
+    const psz = cpt ? 20 : 22;
     let s = `<rect x="0" y="0" width="${CW}" height="${headH}" rx="10" fill="${C.blue}"/>`;
     let cx = 0;
-    cols.forEach(col => { const tx = col.align === 'right' ? cx + col.w - 14 : cx + 16; s += T(tx, 37, col.title.toUpperCase(), { size: 22, weight: 700, fill: '#fff', anchor: col.align === 'right' ? 'end' : 'start' }); cx += col.w; });
+    cols.forEach(col => { const tx = col.align === 'right' ? cx + col.w - 14 : cx + 16; s += T(tx, cpt ? 30 : 37, col.title.toUpperCase(), { size: cpt ? 20 : 22, weight: 700, fill: '#fff', anchor: col.align === 'right' ? 'end' : 'start' }); cx += col.w; });
     let y = headH;
     const cellMc = (w, txt) => Math.max(4, Math.floor(maxChars(w - 30, fs2) * (hasArabic(txt) ? 0.8 : 1)));
     if (!rows.length) { const h = 70; s += `<rect x="0" y="${y}" width="${CW}" height="${h}" fill="${C.soft}"/>` + T(CW / 2, y + 44, o.empty || 'No records.', { size: 25, fill: C.muted, anchor: 'middle' }); push(s, y + h); return; }
@@ -248,7 +251,7 @@ function makeCanvas(logo) {
       cx = 0;
       cols.forEach((col, ci) => {
         const cell = cells[ci], baseY = y + padY + fs2;
-        if (cell.pills) { let px = cx + 16; cell.pills.forEach(p => { const pl = pill(px, y + padY - 2, p.label, p.cls, 22); s += pl.svg; px += pl.w + 8; }); }
+        if (cell.pills) { let px = cx + 16; cell.pills.forEach(p => { const pl = pill(px, y + padY - 2, p.label, p.cls, psz); s += pl.svg; px += pl.w + 8; }); }
         else {
           const txt = cell.text != null ? cell.text : '—';
           const lines = wrap(txt, cellMc(col.w, txt));
@@ -265,12 +268,28 @@ function makeCanvas(logo) {
   }
 
   function panel(innerSvg, innerH, o) {
-    o = o || {}; const pad = 24, h = innerH + pad * 2;
+    o = o || {}; const pad = cpt ? 18 : 24, h = innerH + pad * 2;
     let s = `<rect x="0" y="0" width="${CW}" height="${h}" rx="16" fill="${C.soft}" stroke="${C.line}"/>`;
     if (o.accent) s += `<rect x="0" y="0" width="7" height="${h}" rx="3.5" fill="${o.accent}"/>`;
     s += `<g transform="translate(${pad},${pad})">${innerSvg}</g>`;
     push(s, h + (o.gap == null ? SEPY : o.gap));
   }
+  // Two side-by-side panels. left/right = {inner, h, accent, title}. Column inner width = colW-2*pad.
+  function twoColPanels(left, right, o) {
+    o = o || {}; const pad = cpt ? 18 : 24, gap = 22, colW = (CW - gap) / 2;
+    const h = Math.max(left.h, right.h) + pad * 2 + (left.title || right.title ? 40 : 0);
+    let s = '';
+    [[0, left], [colW + gap, right]].forEach(([x, p]) => {
+      s += `<rect x="${x}" y="0" width="${colW}" height="${h}" rx="16" fill="${C.soft}" stroke="${C.line}"/>`;
+      if (p.accent) s += `<rect x="${x}" y="0" width="7" height="${h}" rx="3.5" fill="${p.accent}"/>`;
+      let iy = pad;
+      if (p.title) { s += `<g transform="translate(${x + pad},${pad})">${T(0, 22, p.title, { size: 24, weight: 800, fill: C.blue })}</g>`; iy = pad + 40; }
+      s += `<g transform="translate(${x + pad},${iy})">${p.inner}</g>`;
+    });
+    push(s, h + (o.gap == null ? SEPY : o.gap));
+    return colW - pad * 2;
+  }
+  const colInnerW = () => ((CW - 22) / 2) - (cpt ? 18 : 24) * 2;
 
   function assemble() {
     let y = 0, body = '';
@@ -280,7 +299,7 @@ function makeCanvas(logo) {
     return { svg, width: W, height: H, logoOk: logo.ok };
   }
 
-  return { header, pushSec, kpiGrid, pipeCards, table, panel, spacer, push, assemble, SEPY, CW, C, T, lineT, AED, wrap, maxChars };
+  return { header, pushSec, kpiGrid, pipeCards, table, panel, twoColPanels, colInnerW, spacer, push, assemble, SEPY, CW, C, T, lineT, AED, wrap, maxChars, compact: cpt };
 }
 
 /* ============================================================================
@@ -347,7 +366,7 @@ function buildPage1SVG(model, logo) {
  * PAGE 2 — FOLLOW-UP & SALES DASHBOARD  (Rawan — "what should we do next")
  * ========================================================================== */
 function buildPage2SVG(model, logo) {
-  const cv = makeCanvas(logo), A = model.analysis, R = model.revenue;
+  const cv = makeCanvas(logo, { compact: true }), A = model.analysis, R = model.revenue;
   cv.header('Follow-up & Sales Dashboard', 'Page 2 of 2 · Follow-up', model);
 
   cv.pushSec('1', 'Pending Customer Confirmation', model.rawanPending.length + ' awaiting reply');
@@ -389,37 +408,41 @@ function buildPage2SVG(model, logo) {
   ], model.priority.map((r, i) => Object.assign({ _i: i + 1 }, r)), { empty: 'No revenue opportunities open.' });
   cv.spacer(cv.SEPY);
 
-  cv.pushSec('5', 'Business Analysis');
-  { const lines = [
-      `Confirmation rate: ${A.confirmationRate}% (${A.accepted} of ${A.totalLeads} customer replies).`,
-      `Lost opportunities: ${A.lostCount} customer(s) not interested (${AED(A.lostValue)}).`,
-      `Follow-up workload: ${A.followWorkload} customer(s) awaiting action.`,
-      `Revenue still available: ${AED(A.revenueAvailable)} in open follow-up.`,
+  // Business Analysis (left) + Validation (right) side-by-side to save height
+  cv.pushSec('5', 'Business Analysis & Validation');
+  { const iw = cv.colInnerW();
+    const aLines = [
+      `Confirmation rate: ${A.confirmationRate}% (${A.accepted}/${A.totalLeads} replies)`,
+      `Lost: ${A.lostCount} not interested (${AED(A.lostValue)})`,
+      `Follow-up workload: ${A.followWorkload} awaiting action`,
+      `Revenue still available: ${AED(A.revenueAvailable)}`,
     ];
-    let inner = ''; let yy = 30; lines.forEach(l => { inner += lineT(0, CW - 48, yy, l, { size: 26 }); yy += 42; });
-    cv.panel(inner, yy - 20);
+    let aInner = ''; let ay = 24; aLines.forEach(l => { cv.wrap(l, cv.maxChars(iw, 25)).forEach((ln, li) => { aInner += lineT(li ? 24 : 0, iw, ay, '• ' + ln, { size: 25 }); ay += 36; }); });
+    const v = model.validation, vc = v.ok ? C.green : C.orange;
+    let vInner = T(0, 24, (v.ok ? '✓ VALIDATION PASSED' : '⚠ VALIDATION NOTES'), { size: 25, weight: 800, fill: vc }); let vy = 60;
+    vInner += lineT(0, iw, vy, 'reconciliation ' + (v.reconciles ? 'balanced' : 'GAP') + ' · M' + model.recon.matched + ' U' + model.recon.unmatched + ' A' + model.recon.ambiguous + ' D' + model.recon.duplicates, { size: 23, fill: C.muted }); vy += 34;
+    (v.issues.length ? v.issues : ['No data-quality issues detected.']).forEach(is => { cv.wrap('• ' + is, cv.maxChars(iw, 23)).forEach((ln, li) => { vInner += lineT(li ? 20 : 0, iw, vy, ln, { size: 23, fill: C.muted }); vy += 32; }); });
+    cv.twoColPanels({ inner: aInner, h: ay - 12 }, { inner: vInner, h: vy - 12, accent: vc });
   }
 
   cv.pushSec('6', 'AI Recommendations');
-  { let inner = T(0, 26, '◆ GENERATED FROM TODAY\'S DATA', { size: 22, weight: 800, fill: C.purple }); let yy = 70;
-    model.recs.forEach(r => { const lines = cv.wrap('•  ' + r, Math.floor(cv.maxChars(CW - 48, 26) * (hasArabic(r) ? 0.8 : 1))); lines.forEach((ln, li) => { inner += lineT(li ? 34 : 0, CW - 48, yy, ln, { size: 26 }); yy += 38; }); yy += 8; });
-    cv.panel(inner, yy - 20, { accent: C.purple });
+  { let inner = T(0, 24, '◆ GENERATED FROM TODAY\'S DATA', { size: 21, weight: 800, fill: C.purple }); let yy = 62;
+    model.recs.forEach(r => { const lines = cv.wrap('•  ' + r, Math.floor(cv.maxChars(CW - 36, 25) * (hasArabic(r) ? 0.8 : 1))); lines.forEach((ln, li) => { inner += lineT(li ? 32 : 0, CW - 36, yy, ln, { size: 25 }); yy += 35; }); yy += 6; });
+    cv.panel(inner, yy - 18, { accent: C.purple });
   }
 
-  cv.pushSec('7', 'Office Notes');
-  { let inner = ''; let yy = 30;
-    const notes = model.officeNotes;
-    if (!notes.length) inner = T(0, yy, 'No operational notes recorded today.', { size: 25, fill: C.muted });
-    else notes.forEach(n => { const lines = cv.wrap('•  ' + n.who + ' — ' + n.note, Math.floor(cv.maxChars(CW - 48, 25) * (hasArabic(n.note) ? 0.8 : 1))); lines.forEach((ln, li) => { inner += lineT(li ? 34 : 0, CW - 48, yy, ln, { size: 25 }); yy += 36; }); yy += 4; });
-    cv.panel(inner, Math.max(30, yy - 20));
+  // Office Notes in TWO columns (compact) — keeps every note, half the height
+  cv.pushSec('7', 'Office Notes', model.officeNotes.length + ' note(s)');
+  { const notes = model.officeNotes; const iw = cv.colInnerW();
+    if (!notes.length) { cv.panel(T(0, 24, 'No operational notes recorded today.', { size: 24, fill: C.muted }), 30); }
+    else {
+      const mid = Math.ceil(notes.length / 2), cols = [notes.slice(0, mid), notes.slice(mid)];
+      const colSvg = list => { let s = '', y = 24; list.forEach(n => { const t = n.who + ' — ' + n.note; cv.wrap('• ' + t, Math.floor(cv.maxChars(iw, 24) * (hasArabic(t) ? 0.8 : 1))).forEach((ln, li) => { s += lineT(li ? 20 : 0, iw, y, ln, { size: 24 }); y += 33; }); }); return { s, h: y - 12 }; };
+      const L = colSvg(cols[0]), Rr = colSvg(cols[1]);
+      cv.twoColPanels({ inner: L.s, h: L.h }, { inner: Rr.s, h: Rr.h });
+    }
   }
-
-  { const v = model.validation, vc = v.ok ? C.green : C.orange;
-    let inner = T(0, 30, (v.ok ? '✓ VALIDATION PASSED' : '⚠ VALIDATION NOTES') + ' — reconciliation ' + (v.reconciles ? 'balanced' : 'GAP') + ' · matched ' + model.recon.matched + ' · unmatched ' + model.recon.unmatched + ' · ambiguous ' + model.recon.ambiguous + ' · duplicate ' + model.recon.duplicates, { size: 24, weight: 800, fill: vc });
-    let yy = 66; (v.issues.length ? v.issues : ['No data-quality issues detected.']).forEach(is => { inner += lineT(0, CW - 48, yy, '• ' + is, { size: 23, fill: C.muted }); yy += 34; });
-    cv.panel(inner, yy - 20, { gap: 20 });
-  }
-  cv.push(T(0, 30, 'ALMUTARJEM Translation Services · Follow-up & Sales · Page 2 of 2 · Customer tracking from Rawan.', { size: 22, fill: C.muted }), 50);
+  cv.push(T(0, 28, 'ALMUTARJEM Translation Services · Follow-up & Sales · Page 2 of 2 · Customer tracking from Rawan.', { size: 21, fill: C.muted }), 46);
   return cv.assemble();
 }
 
