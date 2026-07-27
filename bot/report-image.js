@@ -193,55 +193,55 @@ function makeCanvas(logo, opts) {
     if (logo.ok) s += `<image x="${PAD}" y="${(H - logoH) / 2 - 3}" height="${logoH}" width="${logoW}" href="${logo.uri}"/>`;
     else s += T(PAD, H / 2 + 6, 'ALMUTARJEM', { size: 54, weight: 800, fill: C.blue });
     const tx = PAD + (logo.ok ? logoW + 44 : 360);
-    s += T(tx, 96, title, { size: 50, weight: 800, fill: C.blue });
-    s += T(tx, 140, 'ALMUTARJEM TRANSLATION SERVICES', { size: 25, weight: 700, fill: C.muted });
-    s += T(W - PAD, 84, `${model.dayName}, ${model.dateStr}`, { size: 28, weight: 700, fill: C.ink, anchor: 'end' });
-    s += T(W - PAD, 122, 'Report time 20:00 GST', { size: 25, fill: C.muted, anchor: 'end' });
-    const cw = pageLabel.length * 15 + 40;
-    s += `<rect x="${W - PAD - cw}" y="140" width="${cw}" height="42" rx="21" fill="#DCE7F4"/>` + T(W - PAD - cw / 2, 169, pageLabel, { size: 24, weight: 700, fill: C.blue2, anchor: 'middle' });
+    s += T(tx, 94, title, { size: 56, weight: 800, fill: C.blue });
+    s += T(tx, 142, 'ALMUTARJEM TRANSLATION SERVICES', { size: 30, weight: 700, fill: C.muted });
+    s += T(W - PAD, 82, `${model.dayName}, ${model.dateStr}`, { size: 32, weight: 700, fill: C.ink, anchor: 'end' });
+    s += T(W - PAD, 122, 'Report time 20:00 GST', { size: 28, fill: C.muted, anchor: 'end' });
+    const cw = pageLabel.length * 16 + 44;
+    s += `<rect x="${W - PAD - cw}" y="140" width="${cw}" height="46" rx="23" fill="#DCE7F4"/>` + T(W - PAD - cw / 2, 171, pageLabel, { size: 26, weight: 700, fill: C.blue2, anchor: 'middle' });
     push(s, H, 0);
   }
 
   function pushSec(num, title, tag) {
-    const h = cpt ? 50 : 66, bs = cpt ? 40 : 46, tf = cpt ? 30 : 34; let s = '';
-    s += `<rect x="0" y="6" width="${bs}" height="${bs}" rx="9" fill="${C.blue}"/>` + T(bs / 2, cpt ? 34 : 41, String(num), { size: cpt ? 23 : 26, weight: 800, fill: '#fff', anchor: 'middle' });
-    s += T(bs + 14, cpt ? 36 : 42, title, { size: tf, weight: 800, fill: C.blue });
-    if (tag) s += T(CW, cpt ? 36 : 42, tag, { size: cpt ? 22 : 24, weight: 600, fill: C.muted, anchor: 'end' });
+    const h = cpt ? 56 : 68, bs = cpt ? 46 : 50, tf = cpt ? 36 : 40; let s = '';
+    s += `<rect x="0" y="6" width="${bs}" height="${bs}" rx="10" fill="${C.blue}"/>` + T(bs / 2, cpt ? 39 : 43, String(num), { size: cpt ? 26 : 28, weight: 800, fill: '#fff', anchor: 'middle' });
+    s += T(bs + 16, cpt ? 41 : 45, title, { size: tf, weight: 800, fill: C.blue });
+    if (tag) s += T(CW, cpt ? 41 : 45, tag, { size: cpt ? 25 : 26, weight: 600, fill: C.muted, anchor: 'end' });
     s += `<rect x="0" y="${h - 4}" width="${CW}" height="3" fill="${C.line}"/>`;
-    push(s, h + (cpt ? 6 : 14));
+    push(s, h + (cpt ? 8 : 14));
   }
 
   function kpiGrid(cards) {
-    const cols = 3, gap = 22, cardW = (CW - gap * (cols - 1)) / cols, cardH = 150, rows = Math.ceil(cards.length / cols);
+    const cols = 3, gap = 22, cardW = (CW - gap * (cols - 1)) / cols, cardH = 164, rows = Math.ceil(cards.length / cols);
     let s = '';
     cards.forEach((c, i) => {
       const cx = (i % cols) * (cardW + gap), cy = Math.floor(i / cols) * (cardH + gap);
       s += `<rect x="${cx}" y="${cy}" width="${cardW}" height="${cardH}" rx="16" fill="${C.soft}" stroke="${C.line}"/>`;
-      s += `<rect x="${cx + 22}" y="${cy + 30}" width="66" height="66" rx="14" fill="${c.accent}"/>`;
-      s += T(cx + 22 + 33, cy + 30 + 44, c.ic, { size: 34, weight: 800, fill: '#fff', anchor: 'middle' });
-      s += T(cx + 110, cy + 62, String(c.value), { size: 44, weight: 800, fill: C.ink });
-      s += T(cx + 110, cy + 100, c.label.toUpperCase(), { size: 22, weight: 700, fill: C.muted });
-      if (c.sub) s += T(cx + 110, cy + 128, c.sub, { size: 20, fill: C.muted });
+      s += `<rect x="${cx + 24}" y="${cy + 32}" width="72" height="72" rx="15" fill="${c.accent}"/>`;
+      s += T(cx + 24 + 36, cy + 32 + 48, c.ic, { size: 38, weight: 800, fill: '#fff', anchor: 'middle' });
+      s += T(cx + 120, cy + 68, String(c.value), { size: 48, weight: 800, fill: C.ink });
+      s += T(cx + 120, cy + 108, c.label.toUpperCase(), { size: 26, weight: 700, fill: C.muted });
+      if (c.sub) s += T(cx + 120, cy + 138, c.sub, { size: 23, fill: C.muted });
     });
     push(s, rows * cardH + (rows - 1) * gap + SEPY);
   }
 
   function pipeCards(cards) {
-    const cols = cards.length, gap = 22, cardW = (CW - gap * (cols - 1)) / cols, cardH = 130;
+    const cols = cards.length, gap = 22, cardW = (CW - gap * (cols - 1)) / cols, cardH = 138;
     let s = '';
-    cards.forEach((c, i) => { const cx = i * (cardW + gap); s += `<rect x="${cx}" y="0" width="${cardW}" height="${cardH}" rx="16" fill="${c.fill}"/>`; s += T(cx + 28, 52, c.label.toUpperCase(), { size: 24, weight: 700, fill: '#fff' }); s += T(cx + 28, 104, c.value, { size: 44, weight: 800, fill: '#fff' }); });
+    cards.forEach((c, i) => { const cx = i * (cardW + gap); s += `<rect x="${cx}" y="0" width="${cardW}" height="${cardH}" rx="16" fill="${c.fill}"/>`; s += T(cx + 30, 56, c.label.toUpperCase(), { size: 27, weight: 700, fill: '#fff' }); s += T(cx + 30, 110, c.value, { size: 48, weight: 800, fill: '#fff' }); });
     push(s, cardH + SEPY);
   }
 
   function table(cols, rows, o) {
-    o = o || {}; const fs2 = o.size || (cpt ? 24 : 26), lh = Math.round(fs2 * (cpt ? 1.2 : 1.28)), padY = cpt ? 9 : 16, headH = cpt ? 44 : 54;
-    const psz = cpt ? 20 : 22;
+    o = o || {}; const fs2 = o.size || 30, lh = Math.round(fs2 * (cpt ? 1.22 : 1.28)), padY = cpt ? 12 : 16, headH = cpt ? 58 : 62;
+    const psz = 26, hf = 29;
     let s = `<rect x="0" y="0" width="${CW}" height="${headH}" rx="10" fill="${C.blue}"/>`;
     let cx = 0;
-    cols.forEach(col => { const tx = col.align === 'right' ? cx + col.w - 14 : cx + 16; s += T(tx, cpt ? 30 : 37, col.title.toUpperCase(), { size: cpt ? 20 : 22, weight: 700, fill: '#fff', anchor: col.align === 'right' ? 'end' : 'start' }); cx += col.w; });
+    cols.forEach(col => { const tx = col.align === 'right' ? cx + col.w - 14 : cx + 16; s += T(tx, cpt ? 39 : 41, col.title.toUpperCase(), { size: hf, weight: 700, fill: '#fff', anchor: col.align === 'right' ? 'end' : 'start' }); cx += col.w; });
     let y = headH;
     const cellMc = (w, txt) => Math.max(4, Math.floor(maxChars(w - 30, fs2) * (hasArabic(txt) ? 0.8 : 1)));
-    if (!rows.length) { const h = 70; s += `<rect x="0" y="${y}" width="${CW}" height="${h}" fill="${C.soft}"/>` + T(CW / 2, y + 44, o.empty || 'No records.', { size: 25, fill: C.muted, anchor: 'middle' }); push(s, y + h); return; }
+    if (!rows.length) { const h = 78; s += `<rect x="0" y="${y}" width="${CW}" height="${h}" fill="${C.soft}"/>` + T(CW / 2, y + 50, o.empty || 'No records.', { size: 29, fill: C.muted, anchor: 'middle' }); push(s, y + h); return; }
     rows.forEach((row, ri) => {
       const cells = cols.map(col => col.cell(row));
       const linesPer = cells.map((cell, ci) => cell.pills ? 1 : wrap(cell.text != null ? cell.text : '—', cellMc(cols[ci].w, cell.text)).length);
@@ -355,10 +355,10 @@ function buildPage1SVG(model, logo) {
       `${AED(K.revenue)} confirmed revenue today`,
       `${model.rawanAccepted.length} customer(s) confirmed / accepted`,
     ];
-    let inner = ''; let yy = 34; b.forEach(l => { inner += T(0, yy, '•  ' + l, { size: 28 }); yy += 46; });
-    cv.panel(inner, yy - 24, { gap: 20 });
+    let inner = ''; let yy = 36; b.forEach(l => { inner += T(0, yy, '•  ' + l, { size: 30 }); yy += 50; });
+    cv.panel(inner, yy - 26, { gap: 20 });
   }
-  cv.push(T(0, 30, 'ALMUTARJEM Translation Services · Daily Operations · Page 1 of 2 · Key figures from Sherry (master).', { size: 22, fill: C.muted }), 50);
+  cv.push(T(0, 32, 'ALMUTARJEM Translation Services · Daily Operations · Page 1 of 2 · Key figures from Sherry (master).', { size: 24, fill: C.muted }), 52);
   return cv.assemble();
 }
 
@@ -417,32 +417,32 @@ function buildPage2SVG(model, logo) {
       `Follow-up workload: ${A.followWorkload} awaiting action`,
       `Revenue still available: ${AED(A.revenueAvailable)}`,
     ];
-    let aInner = ''; let ay = 24; aLines.forEach(l => { cv.wrap(l, cv.maxChars(iw, 25)).forEach((ln, li) => { aInner += lineT(li ? 24 : 0, iw, ay, '• ' + ln, { size: 25 }); ay += 36; }); });
+    let aInner = ''; let ay = 28; aLines.forEach(l => { cv.wrap(l, cv.maxChars(iw, 29)).forEach((ln, li) => { aInner += lineT(li ? 26 : 0, iw, ay, '• ' + ln, { size: 29 }); ay += 42; }); });
     const v = model.validation, vc = v.ok ? C.green : C.orange;
-    let vInner = T(0, 24, (v.ok ? '✓ VALIDATION PASSED' : '⚠ VALIDATION NOTES'), { size: 25, weight: 800, fill: vc }); let vy = 60;
-    vInner += lineT(0, iw, vy, 'reconciliation ' + (v.reconciles ? 'balanced' : 'GAP') + ' · M' + model.recon.matched + ' U' + model.recon.unmatched + ' A' + model.recon.ambiguous + ' D' + model.recon.duplicates, { size: 23, fill: C.muted }); vy += 34;
-    (v.issues.length ? v.issues : ['No data-quality issues detected.']).forEach(is => { cv.wrap('• ' + is, cv.maxChars(iw, 23)).forEach((ln, li) => { vInner += lineT(li ? 20 : 0, iw, vy, ln, { size: 23, fill: C.muted }); vy += 32; }); });
-    cv.twoColPanels({ inner: aInner, h: ay - 12 }, { inner: vInner, h: vy - 12, accent: vc });
+    let vInner = T(0, 28, (v.ok ? '✓ VALIDATION PASSED' : '⚠ VALIDATION NOTES'), { size: 29, weight: 800, fill: vc }); let vy = 70;
+    vInner += lineT(0, iw, vy, 'reconciliation ' + (v.reconciles ? 'balanced' : 'GAP') + ' · M' + model.recon.matched + ' U' + model.recon.unmatched + ' A' + model.recon.ambiguous + ' D' + model.recon.duplicates, { size: 26, fill: C.muted }); vy += 40;
+    (v.issues.length ? v.issues : ['No data-quality issues detected.']).forEach(is => { cv.wrap('• ' + is, cv.maxChars(iw, 26)).forEach((ln, li) => { vInner += lineT(li ? 22 : 0, iw, vy, ln, { size: 26, fill: C.muted }); vy += 36; }); });
+    cv.twoColPanels({ inner: aInner, h: ay - 14 }, { inner: vInner, h: vy - 14, accent: vc });
   }
 
   cv.pushSec('6', 'AI Recommendations');
-  { let inner = T(0, 24, '◆ GENERATED FROM TODAY\'S DATA', { size: 21, weight: 800, fill: C.purple }); let yy = 62;
-    model.recs.forEach(r => { const lines = cv.wrap('•  ' + r, Math.floor(cv.maxChars(CW - 36, 25) * (hasArabic(r) ? 0.8 : 1))); lines.forEach((ln, li) => { inner += lineT(li ? 32 : 0, CW - 36, yy, ln, { size: 25 }); yy += 35; }); yy += 6; });
-    cv.panel(inner, yy - 18, { accent: C.purple });
+  { let inner = T(0, 28, '◆ GENERATED FROM TODAY\'S DATA', { size: 24, weight: 800, fill: C.purple }); let yy = 72;
+    model.recs.forEach(r => { const lines = cv.wrap('•  ' + r, Math.floor(cv.maxChars(CW - 36, 29) * (hasArabic(r) ? 0.8 : 1))); lines.forEach((ln, li) => { inner += lineT(li ? 34 : 0, CW - 36, yy, ln, { size: 29 }); yy += 40; }); yy += 8; });
+    cv.panel(inner, yy - 20, { accent: C.purple });
   }
 
   // Office Notes in TWO columns (compact) — keeps every note, half the height
   cv.pushSec('7', 'Office Notes', model.officeNotes.length + ' note(s)');
   { const notes = model.officeNotes; const iw = cv.colInnerW();
-    if (!notes.length) { cv.panel(T(0, 24, 'No operational notes recorded today.', { size: 24, fill: C.muted }), 30); }
+    if (!notes.length) { cv.panel(T(0, 30, 'No operational notes recorded today.', { size: 28, fill: C.muted }), 36); }
     else {
       const mid = Math.ceil(notes.length / 2), cols = [notes.slice(0, mid), notes.slice(mid)];
-      const colSvg = list => { let s = '', y = 24; list.forEach(n => { const t = n.who + ' — ' + n.note; cv.wrap('• ' + t, Math.floor(cv.maxChars(iw, 24) * (hasArabic(t) ? 0.8 : 1))).forEach((ln, li) => { s += lineT(li ? 20 : 0, iw, y, ln, { size: 24 }); y += 33; }); }); return { s, h: y - 12 }; };
+      const colSvg = list => { let s = '', y = 28; list.forEach(n => { const t = n.who + ' — ' + n.note; cv.wrap('• ' + t, Math.floor(cv.maxChars(iw, 28) * (hasArabic(t) ? 0.8 : 1))).forEach((ln, li) => { s += lineT(li ? 22 : 0, iw, y, ln, { size: 28 }); y += 38; }); }); return { s, h: y - 14 }; };
       const L = colSvg(cols[0]), Rr = colSvg(cols[1]);
       cv.twoColPanels({ inner: L.s, h: L.h }, { inner: Rr.s, h: Rr.h });
     }
   }
-  cv.push(T(0, 28, 'ALMUTARJEM Translation Services · Follow-up & Sales · Page 2 of 2 · Customer tracking from Rawan.', { size: 21, fill: C.muted }), 46);
+  cv.push(T(0, 30, 'ALMUTARJEM Translation Services · Follow-up & Sales · Page 2 of 2 · Customer tracking from Rawan.', { size: 24, fill: C.muted }), 48);
   return cv.assemble();
 }
 
