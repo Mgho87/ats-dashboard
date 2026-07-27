@@ -106,6 +106,11 @@ function dayKeyDubai(offsetDays = 0) {
   const d = new Date(nowMs() + offsetDays * 86400000);
   return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(d); // YYYY-MM-DD
 }
+
+/* Sunday exclusion (Asia/Dubai). Built at Dubai noon so the fixed +04:00 offset never crosses a UTC day boundary. */
+function isSundayDubai(dateKey) {
+  return new Date(dateKey + 'T12:00:00+04:00').getUTCDay() === 0;
+}
 /* Dubai wall-clock parts for a given ms (default: now). Used by the scheduler to know the
  * local hour/minute and today's date key without ambiguity. */
 function dubaiParts(ms) {
@@ -500,6 +505,7 @@ async function tickOnce(reason) {
 
   if (st.lastSuccess && st.lastSuccess.date === candidate) { logEvent('skip_already_sent', { day: candidate }); writeState(st); return { status: 'already_sent', day: candidate }; }
   if (st.lastFailure && st.lastFailure.date === candidate) { logEvent('skip_given_up', { day: candidate }); writeState(st); return { status: 'given_up', day: candidate }; }
+  if (isSundayDubai(candidate)) { log('Sunday holiday — daily office report skipped.'); logEvent('skip_sunday', { day: candidate }); writeState(st); return { status: 'skipped_sunday', day: candidate }; }
   if (minsSinceDue < 0)                                    { logEvent('skip_not_due', { day: candidate, nextAt: nextReportISO() }); writeState(st); return { status: 'not_due', day: candidate }; }
   // Stale guard: never START a report far past its slot unless we're already mid-retry on it.
   // Prevents a fresh install (empty state) or a next-morning restart from sending a stale report.
@@ -619,7 +625,11 @@ async function pollCommands() {
   if (has('--tick')) { const r = await tickOnce('cron'); process.exit(r && (r.status === 'permanent_failure') ? 2 : 0); }
 
   // One-shot modes (manual / legacy cron): send a specific day's report immediately, no dedup/state.
-  if (has('--today'))     { await sendReport(dayKeyDubai(0), 'Today', CHAT_ID);     process.exit(0); }
+    if (has('--today')) {
+    const dk = dayKeyDubai(0);
+    if (isSundayDubai(dk) && !has('--force')) { log('Sunday holiday — daily office report skipped.'); logEvent('skip_sunday', { day: dk, trigger: '--today' }); process.exit(0); }
+    await sendReport(dk, 'Today', CHAT_ID); process.exit(0);
+  }
   if (has('--yesterday')) { await sendReport(dayKeyDubai(-1), 'Yesterday', CHAT_ID); process.exit(0); }
 
   // Manual one-shot for a specific day: --send --date YYYY-MM-DD (sends that day's report once).
