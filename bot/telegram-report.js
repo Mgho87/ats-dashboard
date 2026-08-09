@@ -205,6 +205,43 @@ async function getRawan(dateKey) {
     .filter(o => o.client || (o.ref && o.ref !== '0') || o.service || o.amount || o.phone); // drop blank placeholder rows
   return { rows, connected: true };
 }
+/* ALL Rawan rows (no date filter) for the carried-forward pipeline. Resilient to the flaky
+ * publish-to-web endpoint: retries, and detects an HTML error page (a 200 or 4xx that is NOT
+ * CSV) so a transient blip is reported as loaded:false rather than silently parsed as 0 rows. */
+async function getRawanAll(retries) {
+  if (!RAWAN_URL) return { rows: [], loaded: false };
+  retries = retries == null ? 4 : retries;
+  let lastErr = '';
+  for (let attempt = 0; attempt < retries; attempt++) {
+    if (attempt) await new Promise(r => setTimeout(r, 500 * attempt));
+    try {
+      const bust = (RAWAN_URL.includes('?') ? '&' : '?') + '_=' + Date.now() + attempt;
+      const r = await fetch(RAWAN_URL + bust, { cache: 'no-store', redirect: 'follow', headers: { 'Cache-Control': 'no-cache' } });
+      const text = await r.text();
+      if (!r.ok) { lastErr = 'HTTP ' + r.status; continue; }
+      if (/^\s*<(!doctype|html)/i.test(text)) { lastErr = 'HTML error page (not CSV)'; continue; }   // transient publish blip
+      const grid = parseCSV(text).filter(x => x.some(c => String(c).trim() !== ''));
+      if (!grid.length) return { rows: [], loaded: true };
+      const idx = {};
+      grid[0].forEach((h, n) => { const k = String(h || '').trim().toLowerCase();
+        if (/refr?ence|reference/.test(k)) idx.ref = n; else if (k === 'date') idx.date = n;
+        else if (/company|client|name/.test(k) && idx.client == null) idx.client = n; else if (/phone/.test(k)) idx.phone = n;
+        else if (/service/.test(k)) idx.service = n; else if (/amount/.test(k)) idx.amount = n;
+        else if (/payment status/.test(k)) idx.status = n; else if (/file status|delivery/.test(k)) idx.fileStatus = n;
+        else if (/lead outcome|outcome/.test(k)) idx.outcome = n; else if (/lead source/.test(k)) idx.lead = n; else if (/note/.test(k)) idx.notes = n; });
+      if (idx.date == null || idx.client == null) { lastErr = 'unexpected headers'; continue; }       // PARSE_ERROR guard
+      const g = (row, f) => idx[f] != null ? String(row[idx[f]] == null ? '' : row[idx[f]]).trim() : '';
+      const rows = grid.slice(1).map(row => ({
+        date: rawanDateKey(g(row, 'date')), ref: g(row, 'ref'), client: g(row, 'client'), service: g(row, 'service'),
+        amount: rawanAmount(g(row, 'amount')), status: g(row, 'status'), fileStatus: g(row, 'fileStatus'),
+        lead: g(row, 'lead'), outcome: g(row, 'outcome'), notes: g(row, 'notes'), phone: g(row, 'phone'),
+      })).filter(o => o.client || (o.ref && o.ref !== '0') || o.amount || o.phone);
+      return { rows, loaded: true };
+    } catch (e) { lastErr = e.message; }
+  }
+  log('RAWAN SOURCE UNAVAILABLE after ' + retries + ' tries: ' + lastErr);
+  return { rows: [], loaded: false, error: lastErr };
+}
 
 /* ---------- report building (returns array of message chunks ≤ Telegram limit) ---------- */
 function fileLine(i, r, withOutcome, tag) {
@@ -367,13 +404,18 @@ async function sendReport(dateKey, label, chatId) {
 const ARCHIVE_DIR = path.join(__dirname, 'archive');
 async function makeReportImage(dateKey) {
   const ri = require('./report-image');                        // lazy — text mode never loads sharp
-  let sherry = [], rawanRes = { rows: [] };
+  const pipe = require('./pipeline');
+  let sherry = [];
   try { sherry = await getSherry(dateKey); } catch (e) { log('SHEET ERROR (Sherry/' + dateKey + '): ' + e.message); throw e; }
-  try { rawanRes = await getRawan(dateKey); } catch (e) { log('SHEET ERROR (Rawan/' + dateKey + '): ' + e.message); }
-  const model = ri.computeModel(dateKey, sherry, rawanRes.rows);
+  let ra = { rows: [], loaded: false };
+  try { ra = await getRawanAll(); } catch (e) { log('SHEET ERROR (RawanAll/' + dateKey + '): ' + e.message); }
+  const sourceState = pipe.sourceHealth(ra.loaded, ra.rows, dateKey);      // SOURCE_OK|STALE_DATA|SOURCE_UNAVAILABLE|EMPTY_VALID
+  const sameDay = ra.rows.filter(r => r.date === dateKey);                 // today's rows for Page-1 confirmations
+  logEvent('rawan_source', { day: dateKey, state: sourceState, rows: ra.rows.length, sameDay: sameDay.length });
+  const model = ri.computeModel(dateKey, sherry, sameDay, ra.rows, { sourceState });
   try { fs.mkdirSync(ARCHIVE_DIR, { recursive: true }); } catch (_) {}
-  const pages = await ri.renderReportPages(model, ARCHIVE_DIR, dateKey);   // [{page,path,width,height,size,renderer,logoOk}, ...]
-  return { sherry, rawan: rawanRes.rows, model, pages };
+  const pages = await ri.renderReportPages(model, ARCHIVE_DIR, dateKey);
+  return { sherry, rawan: sameDay, rawanAll: ra.rows, sourceState, model, pages };
 }
 // Upload a PNG via multipart. sendPhoto by default; sendDocument when it exceeds Telegram's
 // photo limits (or on a photo-side rejection) — content is NEVER trimmed to fit.

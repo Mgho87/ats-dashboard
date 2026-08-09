@@ -89,6 +89,22 @@ The report is delivered as **TWO** professional dashboard PNGs (sent in order) i
 
 Both pages together hold ALL data (nothing removed, only reorganized). Each page is sent as its own
 image with caption `Daily Office Report — <date> · Page N/2 · <title>`.
+
+**Page 2 = carried-forward Sales Pipeline (audited, `pipeline.js`).** Operations (Page 1) are SAME-DAY
+Sherry; the pipeline is CARRIED-FORWARD Rawan (open leads from any prior date whose latest state is
+still open). Engine rules:
+- **Lead identity:** valid reference, else `phone + service + inquiry-month` (never phone alone).
+- **Latest-state:** a lead's newest row decides its status; history collapses.
+- **Classes:** WON / LOST / OPEN / NEEDS_REVIEW. "Other"/blank → NEEDS_REVIEW (never silently OPEN).
+- **Conversion confidence:** HIGH (same phone + same ref, or same amount + date ≤14d, with a
+  paid/delivered Sherry job) auto-closes → WON_CONVERTED; MEDIUM/LOW only flag, never auto-close.
+- **Age** buckets only (NEW/FOLLOW-UP/OVERDUE/AGING/STALE/STALE-REVIEW) — it never turns OPEN→LOST.
+- **Note↔outcome contradiction** (e.g. "found someone else" on a Price-Issue lead) → NEEDS_REVIEW.
+- **Headline = ACTIVE OPEN (0–30 days).** STALE (31–45), STALE-REVIEW (46+), NEEDS_REVIEW, TODAY NEW,
+  TODAY WON, and HIGH-VALUE (≥AED 2,000, visible at any age) are separate KPIs — never one inflated total.
+- **Source health** (`sourceHealth`): SOURCE_OK / STALE_DATA / SOURCE_UNAVAILABLE / EMPTY_VALID. On
+  SOURCE_UNAVAILABLE the pipeline shows a red banner + "—", **never AED 0** (`getRawanAll()` retries and
+  detects the flaky publish-to-web HTML error page). Validate: `node test-pipeline.js`.
 - **Modes** (env `DAILY_REPORT_MODE`): `text` (default/rollback, unchanged), `png` (build + send the
   image), `dry-run` (build + archive the image, no send, no token needed).
 - **Renderer:** the report is generated as an **SVG** and rasterised by **Sharp** (`sharp`, a prebuilt
