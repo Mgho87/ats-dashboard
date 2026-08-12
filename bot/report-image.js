@@ -159,7 +159,8 @@ function computeModel(dateKey, sherry, rawan, rawanAll, opts) {
   const validation = { reconciles: true, ok: true, issues };
 
   // ---- carried-forward sales pipeline (audited, confidence-based) ----
-  const pipe = P.buildPipeline(rawanAll, sherry, dateKey);
+  // conversion matching needs ALL Sherry jobs (any date ≤ report), not just today's — use sherryAll.
+  const pipe = P.buildPipeline(rawanAll, opts.sherryAll || sherry, dateKey);
   const sourceState = opts.sourceState || P.sourceHealth(true, rawanAll, dateKey);
   const tot = pipe.totals;
 
@@ -385,9 +386,13 @@ function leadClassPill(L) {
   return { label: cap(L.outcome || 'Open'), cls: outcomeClass(L.outcome) };
 }
 
-function buildPage2SVG(model, logo) {
+function buildPage2SVG(model, logo, opts) {
+  opts = opts || {};
+  const topN = opts.topN || 0;                 // cap Active-Open / Needs-Review lists for a mobile-friendly page
   const cv = makeCanvas(logo, { compact: true });
   const P = model.pipeline, tot = P.totals, seg = P.segments, ss = model.sourceState;
+  const capList = arr => (topN && arr.length > topN) ? arr.slice(0, topN) : arr;
+  const moreNote = (arr, label) => { if (topN && arr.length > topN) cv.push(T(0, 40, '+ ' + (arr.length - topN) + ' more ' + label + ' — full list in the weekly pipeline review', { size: 26, weight: 600, fill: C.muted }), 56); };
   cv.header('Sales Pipeline Dashboard', 'Page 2 of 2 · Pipeline', model);
 
   // ---- source-health banner (never silently show 0) ----
@@ -444,7 +449,8 @@ function buildPage2SVG(model, logo) {
     { title: 'Age', w: 240, cell: r => ({ pills: [{ label: (AGE_LBL[r.ageBucket] || '') + ' ' + r.age + 'd', cls: AGE_CLS[r.ageBucket] || 'gray' }] }) },
     { title: 'Status', w: 300, cell: r => ({ pills: [{ label: cap(r.outcome || 'Open'), cls: outcomeClass(r.outcome) }] }) },
     { title: 'Note', w: CW - 66 - 560 - 300 - 240 - 300, cell: r => ({ text: r.note || '—' }) },
-  ], seg.activeOpen.slice().sort((a, b) => b.amt - a.amt).map((r, i) => Object.assign({ _i: i + 1 }, r)), { empty: 'No active open leads (0–30 days).' });
+  ], capList(seg.activeOpen.slice().sort((a, b) => b.amt - a.amt)).map((r, i) => Object.assign({ _i: i + 1 }, r)), { empty: 'No active open leads (0–30 days).' });
+  moreNote(seg.activeOpen, 'active-open leads');
   cv.spacer(cv.SEPY);
 
   // ---- §4 Needs Review (Other / contradiction / low-confidence) ----
@@ -455,7 +461,8 @@ function buildPage2SVG(model, logo) {
     { title: 'Amount', w: 300, align: 'right', cell: r => ({ text: AED(r.amt), bold: true }) },
     { title: 'Why', w: 360, cell: r => ({ pills: [{ label: r.flag === 'OUTCOME_CONTRADICTION' ? 'Contradiction' : r.convFlag ? 'Match ' + r.convFlag : cap(r.outcome || 'Other'), cls: r.flag ? 'red' : 'gray' }] }) },
     { title: 'Note', w: CW - 66 - 520 - 300 - 360, cell: r => ({ text: r.note || '—' }) },
-  ], seg.needsReview.slice().sort((a, b) => b.amt - a.amt).map((r, i) => Object.assign({ _i: i + 1 }, r)), { empty: 'Nothing needs review.' });
+  ], capList(seg.needsReview.slice().sort((a, b) => b.amt - a.amt)).map((r, i) => Object.assign({ _i: i + 1 }, r)), { empty: 'Nothing needs review.' });
+  moreNote(seg.needsReview, 'review items');
   cv.spacer(cv.SEPY);
 
   // ---- §5 Pipeline Analysis + Data Quality (two columns) ----
@@ -528,7 +535,7 @@ async function renderReportPages(model, dir, dateKey, opts) {
   const logo = loadLogo(opts.logoPath || path.join(__dirname, 'assets', 'almutarjem-logo.png'));
   const built = [
     { n: 1, page: buildPage1SVG(model, logo) },
-    { n: 2, page: buildPage2SVG(model, logo) },
+    { n: 2, page: buildPage2SVG(model, logo, opts) },
   ];
   const out = [];
   for (const b of built) {

@@ -178,6 +178,18 @@ async function getSherry(dateKey) {
     status: r.payment || '', fileStatus: r.delivery || '', method: r.method || '', lead: r.lead || '', notes: r.notes || '', phone: r.phone || '',
   }));
 }
+/* ALL Sherry/Transactions rows (any date) — needed for cross-sheet conversion matching in the pipeline. */
+async function getSherryAll() {
+  const trans = await fetchSheet(SPREADSHEET_ID, T_NAME);
+  const exp = (await fetchSheetOptional(SPREADSHEET_ID, E_NAME)) || { headers: [], rows: [] };
+  const settings = await fetchSheetOptional(SPREADSHEET_ID, S_NAME);
+  const parsed = compute.parseAll(trans, exp, settings, new Date());
+  return parsed.records.map(r => ({
+    dateKey: r.dateKey, ref: r.ref || '', client: r.client || '', service: r.service || '', amount: +r.amount || 0,
+    // raw sheet labels (e.g. "Paid" / "Partial" / "Delivered") so the v2 renderer's status pills match the sheet verbatim
+    status: r.rawPayment || r.payment || '', fileStatus: r.rawDelivery || r.delivery || '', method: r.method || '', lead: r.lead || '', notes: r.notes || '', phone: r.phone || '',
+  }));
+}
 async function getRawan(dateKey) {
   if (!RAWAN_URL) return { rows: [], connected: false };
   const bust = (RAWAN_URL.includes('?') ? '&' : '?') + '_=' + Date.now();
@@ -403,19 +415,33 @@ async function sendReport(dateKey, label, chatId) {
 /* ---------- image report path (DAILY_REPORT_MODE = png | dry-run) ---------- */
 const ARCHIVE_DIR = path.join(__dirname, 'archive');
 async function makeReportImage(dateKey) {
-  const ri = require('./report-image');                        // lazy — text mode never loads sharp
-  const pipe = require('./pipeline');
-  let sherry = [];
-  try { sherry = await getSherry(dateKey); } catch (e) { log('SHEET ERROR (Sherry/' + dateKey + '): ' + e.message); throw e; }
+  // v2 two-image renderer (SHERRY = actual work/money · RAWAN = leads/potential/feedback).
+  // Legacy single-model renderer (./report-image.js) is retained for rollback + used by v2 only
+  // for the shared Sharp rasteriser/logo loader — its computeModel/pages are no longer called.
+  const v2 = require('./report-image-v2');
+  // ---- Sherry (ACTUAL): short retry before declaring the source down (transient-safe) ----
+  let sherryAll = null, sherryLoaded = false;
+  for (let attempt = 0; attempt < 3 && !sherryLoaded; attempt++) {
+    if (attempt) await new Promise(r => setTimeout(r, 600 * attempt));
+    try { sherryAll = await getSherryAll(); sherryLoaded = true; }
+    catch (e) { log('SHEET ERROR (Sherry/' + dateKey + ') attempt ' + (attempt + 1) + ': ' + e.message); }
+  }
+  const sherry = sherryLoaded ? sherryAll.filter(r => r.dateKey === dateKey) : [];   // same-day confirmed jobs
+  // ---- Rawan (POTENTIAL): getRawanAll already retries + guards the flaky publish-to-web feed ----
   let ra = { rows: [], loaded: false };
   try { ra = await getRawanAll(); } catch (e) { log('SHEET ERROR (RawanAll/' + dateKey + '): ' + e.message); }
-  const sourceState = pipe.sourceHealth(ra.loaded, ra.rows, dateKey);      // SOURCE_OK|STALE_DATA|SOURCE_UNAVAILABLE|EMPTY_VALID
-  const sameDay = ra.rows.filter(r => r.date === dateKey);                 // today's rows for Page-1 confirmations
-  logEvent('rawan_source', { day: dateKey, state: sourceState, rows: ra.rows.length, sameDay: sameDay.length });
-  const model = ri.computeModel(dateKey, sherry, sameDay, ra.rows, { sourceState });
+  const rawanSameDay = ra.rows.filter(r => r.date === dateKey);                        // today's incoming leads
+  // Source health → banner + "—" (never AED 0 / 0 clients). Requirement #6.
+  const source = { sherry: sherryLoaded ? 'OK' : 'DOWN', rawan: ra.loaded ? 'OK' : 'DOWN' };
+  logEvent('report_source', { day: dateKey, sherry: source.sherry, rawan: source.rawan, sherryRows: sherry.length, rawanRows: rawanSameDay.length });
+  const model = v2.computeModelV2(dateKey, sherry, rawanSameDay, { source });
   try { fs.mkdirSync(ARCHIVE_DIR, { recursive: true }); } catch (_) {}
-  const pages = await ri.renderReportPages(model, ARCHIVE_DIR, dateKey);
-  return { sherry, rawan: sameDay, rawanAll: ra.rows, sourceState, model, pages };
+  const rendered = await v2.renderTwoImages(model, ARCHIVE_DIR, {});                   // writes SHERRY.png + RAWAN.png
+  const order = { SHERRY: 1, RAWAN: 2 };                                               // image 1 = SHERRY, image 2 = RAWAN
+  const pages = rendered
+    .map(p => ({ page: order[p.name] || 99, name: p.name, path: p.path, width: p.width, height: p.height, size: p.size, renderer: p.renderer }))
+    .sort((a, b) => a.page - b.page);
+  return { sherry, rawan: rawanSameDay, rawanAll: ra.rows, source, model, pages };
 }
 // Upload a PNG via multipart. sendPhoto by default; sendDocument when it exceeds Telegram's
 // photo limits (or on a photo-side rejection) — content is NEVER trimmed to fit.
@@ -455,11 +481,11 @@ async function deliverReport(dateKey, label, chatId) {
     pages.forEach(p => logEvent('dry_run_image', { day: dateKey, page: p.page, path: p.path, width: p.width, height: p.height, size: p.size, renderer: p.renderer }));
     return { mode: 'dry-run', messageIds: [], pages, model };
   }
-  // png mode: send BOTH pages (Operations, then Follow-up). Content is never merged/trimmed.
-  const titles = { 1: 'Daily Operations', 2: 'Follow-up & Sales' };
+  // png mode: send BOTH images (SHERRY = actual, then RAWAN = leads). Content is never merged/trimmed.
+  const titles = { 1: 'SHERRY — Operations & Revenue', 2: 'RAWAN — Sales Leads & Feedback' };
   const messageIds = [], methods = [];
   for (const p of pages) {
-    const caption = 'Daily Office Report — ' + model.dateStr + ' · Page ' + p.page + '/' + pages.length + ' · ' + (titles[p.page] || '');
+    const caption = 'ALMUTARJEM Daily Report — ' + model.dateStr + ' · Image ' + p.page + '/' + pages.length + ' · ' + (titles[p.page] || p.name || '');
     const sent = await sendImage(chatId, p, caption);
     messageIds.push(...sent.messageIds); methods.push(sent.method);
     logEvent('image_sent', { day: dateKey, page: p.page, method: sent.method, messageIds: sent.messageIds, width: p.width, height: p.height, size: p.size });
