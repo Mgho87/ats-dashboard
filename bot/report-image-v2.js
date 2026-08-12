@@ -28,6 +28,8 @@ const THEME = {
   rawan:  { key: '#4B3F9E', keyDk: '#3B3183', tint: '#ECEAFA', accent2: '#B5378E', name: 'RAWAN'  },
 };
 const OK = '#1E9E6A', WARN = '#E08A0B', BAD = '#CE3F3F', INFO = '#2E6DB4', PUR = '#7A3FD0';
+const TONE_SHERRY = { bg: '#E7F4EE', br: '#BFE4D3', fg: '#0B5E41' };   // confirmed/actual (primary)
+const TONE_RAWAN = { bg: '#ECEAFA', br: '#D6CFF3', fg: '#3B3183' };    // potential/leads (secondary)
 const FONT = "Arial, 'DejaVu Sans', 'Segoe UI', 'Noto Sans', 'Noto Sans Arabic', sans-serif";
 const W = 1500, PAD = 56, CW = W - 2 * PAD;
 
@@ -105,55 +107,59 @@ function makeCanvas(theme) {
 
   // KPI card row (2..5). Each card: soft bg, top accent stripe, big value, label, sub.
   function kpiRow(cards) {
-    const n = cards.length, gap = 18, cw = (CW - gap * (n - 1)) / n, ch = 176;
+    const n = cards.length, gap = 18, cw = (CW - gap * (n - 1)) / n, ch = 198;
     let s = '';
     cards.forEach((c, i) => {
       const x = i * (cw + gap), accent = c.accent || theme.key;
       s += `<rect x="${x}" y="0" width="${cw}" height="${ch}" rx="16" fill="${c.fill || SOFT}" stroke="${LINE}"/>`;
-      s += `<rect x="${x}" y="0" width="${cw}" height="7" rx="3.5" fill="${accent}"/>`;
-      s += T(x + 24, 60, c.label.toUpperCase(), { size: 21, weight: 800, fill: MUTE, spacing: '0.5' });
+      s += `<rect x="${x}" y="0" width="${cw}" height="8" rx="4" fill="${accent}"/>`;
+      s += T(x + 26, 66, c.label.toUpperCase(), { size: 23, weight: 800, fill: MUTE, spacing: '0.5' });
       const val = String(c.value);
-      const vs = val.length > 12 ? 32 : val.length > 9 ? 38 : val.length > 6 ? 44 : 52;
-      s += T(x + 22, 122, val, { size: vs, weight: 800, fill: c.valFill || INK });
-      if (c.sub) s += T(x + 24, 156, c.sub, { size: 21, fill: MUTE });
+      const vs = val.length > 12 ? 36 : val.length > 9 ? 42 : val.length > 6 ? 48 : 56;
+      s += T(x + 24, 134, val, { size: vs, weight: 800, fill: c.valFill || INK });
+      if (c.sub) s += T(x + 26, 172, c.sub, { size: 23, fill: MUTE });
     });
     push(s, ch); spacer(SEP);
   }
 
-  // Funnel ribbon: RAWAN potential  →(conv%)→  SHERRY actual  (never summed)
-  function funnel(left, right, mid) {
-    const H = 128, gap = 96, colW = (CW - gap) / 2;
+  // Priority ribbon: PRIMARY block (left) + secondary (right). Each box carries its own tone;
+  // opts.arrow = 'left' (secondary→primary funnel) or 'right'. Confirmed leads first per business priority.
+  function funnel(left, right, mid, opts) {
+    opts = opts || {};
+    const H = 144, gap = 100, colW = (CW - gap) / 2;
     let s = '';
-    const card = (x, box, tone) => {
+    const card = (x, box) => {
+      const tone = box.tone || TONE_RAWAN;
       let g = `<rect x="${x}" y="0" width="${colW}" height="${H}" rx="16" fill="${tone.bg}" stroke="${tone.br}" stroke-width="2"/>`;
-      g += T(x + 26, 44, box.tag, { size: 21, weight: 800, fill: tone.fg, spacing: '0.5' });
-      g += T(x + 26, 92, box.big, { size: 40, weight: 800, fill: INK });
-      g += T(x + colW - 26, 92, box.small, { size: 24, weight: 700, fill: tone.fg, anchor: 'end' });
+      g += T(x + 28, 48, box.tag, { size: 23, weight: 800, fill: tone.fg, spacing: '0.5' });
+      g += T(x + 28, 104, box.big, { size: 45, weight: 800, fill: INK });
+      g += T(x + colW - 28, 104, box.small, { size: 27, weight: 700, fill: tone.fg, anchor: 'end' });
       return g;
     };
-    s += card(0, left, { bg: THEME.rawan.tint, br: '#D6CFF3', fg: THEME.rawan.keyDk });
-    s += card(colW + gap, right, { bg: THEME.sherry.tint, br: '#BFE4D3', fg: THEME.sherry.keyDk });
-    // arrow + conversion badge in the gap
+    s += card(0, left);
+    s += card(colW + gap, right);
+    // connector arrow (orient=auto rotates the marker to the path direction) + conversion badge
     const ax = colW, aw = gap, cy = H / 2;
-    s += `<path d="M ${ax + 14} ${cy} L ${ax + aw - 14} ${cy}" stroke="${MUTE}" stroke-width="4" marker-end="url(#arrow)"/>`;
+    if (opts.arrow === 'left') s += `<path d="M ${ax + aw - 14} ${cy} L ${ax + 16} ${cy}" stroke="${MUTE}" stroke-width="4" marker-end="url(#arrow)"/>`;
+    else s += `<path d="M ${ax + 14} ${cy} L ${ax + aw - 16} ${cy}" stroke="${MUTE}" stroke-width="4" marker-end="url(#arrow)"/>`;
     s += `<defs><marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${MUTE}"/></marker></defs>`;
-    if (mid) { const bw = mid.length * 12 + 22; s += `<rect x="${ax + aw / 2 - bw / 2}" y="${cy - 40}" width="${bw}" height="32" rx="16" fill="${INK}"/>` + T(ax + aw / 2, cy - 17, mid, { size: 20, weight: 800, fill: '#fff', anchor: 'middle' }); }
+    if (mid) { const bw = mid.length * 12 + 24; s += `<rect x="${ax + aw / 2 - bw / 2}" y="${cy - 44}" width="${bw}" height="34" rx="17" fill="${INK}"/>` + T(ax + aw / 2, cy - 20, mid, { size: 21, weight: 800, fill: '#fff', anchor: 'middle' }); }
     push(s, H); spacer(SEP);
   }
 
   function sectionTitle(txt, tag) {
-    const h = 56; let s = `<rect x="0" y="10" width="7" height="34" rx="3.5" fill="${theme.key}"/>`;
-    s += T(22, 42, txt, { size: 32, weight: 800, fill: INK });
-    if (tag) s += T(CW, 40, tag, { size: 22, weight: 600, fill: MUTE, anchor: 'end' });
+    const h = 60; let s = `<rect x="0" y="10" width="8" height="38" rx="4" fill="${theme.key}"/>`;
+    s += T(24, 46, txt, { size: 36, weight: 800, fill: INK });
+    if (tag) s += T(CW, 44, tag, { size: 24, weight: 600, fill: MUTE, anchor: 'end' });
     s += `<rect x="0" y="${h - 2}" width="${CW}" height="2" fill="${LINE}"/>`;
     push(s, h + 12);
   }
 
   function table(cols, rows, o) {
-    o = o || {}; const fs = o.size || 25, lh = Math.round(fs * 1.28), padY = 13, headH = 54, psz = 22;
+    o = o || {}; const fs = o.size || 27, lh = Math.round(fs * 1.3), padY = 16, headH = 60, psz = 23;
     let s = `<rect x="0" y="0" width="${CW}" height="${headH}" rx="10" fill="${theme.keyDk}"/>`;
     let cx = 0;
-    cols.forEach(c => { const tx = c.align === 'right' ? cx + c.w - 14 : cx + 16; s += T(tx, 35, c.title.toUpperCase(), { size: 21, weight: 700, fill: '#fff', anchor: c.align === 'right' ? 'end' : 'start' }); cx += c.w; });
+    cols.forEach(c => { const tx = c.align === 'right' ? cx + c.w - 14 : cx + 16; s += T(tx, 39, c.title.toUpperCase(), { size: 23, weight: 700, fill: '#fff', anchor: c.align === 'right' ? 'end' : 'start' }); cx += c.w; });
     let y = headH;
     const mc = (w, txt) => Math.max(4, Math.floor(maxChars(w - 28, fs) * (hasAr(txt) ? 0.82 : 1)));
     if (!rows.length) { const h = 70; s += `<rect x="0" y="${y}" width="${CW}" height="${h}" fill="${SOFT}"/>` + T(CW / 2, y + 45, o.empty || 'No records.', { size: 25, fill: MUTE, anchor: 'middle' }); push(s, y + h); spacer(o.gap == null ? SEP : o.gap); return; }
@@ -347,10 +353,10 @@ function computeModelV2(dateKey, sherryRows, rawanRows, opts) {
   const priceShare = notProceeded.length ? Math.round((reasons.find(r => r.group === 'PRICE')?.count || 0) / notProceeded.length * 100) : 0;
   const noRespShare = notProceeded.length ? Math.round((reasons.find(r => r.group === 'NO_RESPONSE')?.count || 0) / notProceeded.length * 100) : 0;
   const highestLost = notProceeded.filter(e => e.hasAmt).sort((a, b) => b.amt - a.amt)[0] || null;
-  // client-notes rows: not-proceeded first (by value), then proceeded
+  // client-notes rows: CONVERTED/accepted first (realized before potential), then not-proceeded — each by value
   const noteRows = enriched.slice().sort((a, b) => {
     const ap = a.c.group === 'PROCEEDED' ? 1 : 0, bp = b.c.group === 'PROCEEDED' ? 1 : 0;
-    if (ap !== bp) return ap - bp; return b.amt - a.amt;
+    if (ap !== bp) return bp - ap; return b.amt - a.amt;
   }).map(e => ({
     client: e.r.client || '—', amt: e.amt, hasAmt: e.hasAmt,
     reason: e.c.label, cls: e.c.cls, note: e.r.notes || '—', next: e.c.next,
@@ -422,23 +428,24 @@ function buildSherrySVG(model, logo) {
     { label: 'Delivered', value: S.delivered + ' / ' + S.jobs, sub: 'completed / total', accent: th.accent2 },
   ]);
 
-  // Funnel context (potential → actual)
+  // Funnel context — SHERRY confirmed FIRST (business priority: actual revenue before potential)
   cv.funnel(
-    { tag: 'RAWAN · POTENTIAL (leads)', big: R.totalLeads + ' leads', small: AED0(R.potentialValue) },
-    { tag: 'SHERRY · ACTUAL (confirmed)', big: S.jobs + ' jobs', small: AED0(S.confirmedValue) },
-    R.conversionRate + '% conv'
+    { tag: 'SHERRY · CONFIRMED (actual)', big: S.jobs + ' jobs', small: AED0(S.confirmedValue), tone: TONE_SHERRY },
+    { tag: 'RAWAN · POTENTIAL (leads)', big: R.totalLeads + ' leads', small: AED0(R.potentialValue), tone: TONE_RAWAN },
+    R.conversionRate + '% conv',
+    { arrow: 'left' }   // potential → confirmed
   );
 
   // Jobs table
   cv.sectionTitle("Today's Confirmed Jobs", S.jobs + ' job(s) · Sherry');
   cv.table([
-    { title: 'Client', w: 236, cell: r => ({ text: r.client, bold: true }) },
-    { title: 'File / Document', w: 198, cell: r => ({ text: r.file, fill: MUTE }) },
-    { title: 'Language', w: 200, cell: r => ({ text: r.lang }) },
+    { title: 'Client', w: 226, cell: r => ({ text: r.client, bold: true }) },
+    { title: 'Document', w: 210, cell: r => ({ text: r.file, fill: MUTE }) },
+    { title: 'Language', w: 184, cell: r => ({ text: r.lang }) },
     { title: 'Confirmed', w: 138, align: 'right', cell: r => ({ text: AED0(r.amount), bold: true }) },
     { title: 'Recv.*', w: 138, align: 'right', cell: r => ({ text: r.received == null ? '—' : AED0(r.received), fill: r.received ? THEME.sherry.keyDk : MUTE }) },
-    { title: 'Bal.*', w: 122, align: 'right', cell: r => ({ text: r.balance == null ? '—' : AED0(r.balance), fill: r.balance ? '#9A5A08' : MUTE }) },
-    { title: 'Status', w: CW - 236 - 198 - 200 - 138 - 138 - 122, cell: r => ({ pills: [{ label: r.pay, cls: payCls(r.pay) }, { label: r.file2, cls: fileCls(r.file2) }] }) },
+    { title: 'Bal.*', w: 120, align: 'right', cell: r => ({ text: r.balance == null ? '—' : AED0(r.balance), fill: r.balance ? '#9A5A08' : MUTE }) },
+    { title: 'Status', w: CW - 226 - 210 - 184 - 138 - 138 - 120, cell: r => ({ pills: [{ label: r.pay, cls: payCls(r.pay) }, { label: r.file2, cls: fileCls(r.file2) }] }) },
   ], S.rows, { empty: 'No confirmed Sherry jobs today.' });
   cv.footer('*  Recv. / Bal. are DERIVED from Payment Status — not source fields. Full money split = the reconciliation below.');
 
@@ -500,11 +507,12 @@ function buildRawanSVG(model, logo) {
     { label: 'Not Proceeded', value: String(R.lost + R.pending), sub: R.lost + ' lost · ' + R.pending + ' open', accent: WARN, valFill: '#9A5A08' },
   ]);
 
-  // Funnel (potential → actual) + unrealized emphasis
+  // Funnel — CONVERTED (realized) FIRST, then potential; unrealized emphasis below
   cv.funnel(
-    { tag: 'POTENTIAL (all leads today)', big: R.totalLeads + ' leads', small: AED0(R.potentialValue) },
-    { tag: 'CONVERTED (proceeded)', big: R.converted + ' won', small: AED0(R.convertedValue) },
-    R.conversionRate + '%'
+    { tag: 'CONVERTED (proceeded)', big: R.converted + ' won', small: AED0(R.convertedValue), tone: TONE_SHERRY },
+    { tag: 'POTENTIAL (all leads today)', big: R.totalLeads + ' leads', small: AED0(R.potentialValue), tone: TONE_RAWAN },
+    R.conversionRate + '%',
+    { arrow: 'left' }   // potential → converted
   );
   // Unrealized banner strip
   {
@@ -548,9 +556,9 @@ function buildRawanSVG(model, logo) {
   cv.table([
     { title: 'Client', w: 250, cell: r => ({ text: r.client, bold: true }) },
     { title: 'Potential', w: 140, align: 'right', cell: r => ({ text: r.hasAmt ? AED0(r.amt) : '—', bold: true, fill: r.hasAmt ? THEME.rawan.keyDk : MUTE }) },
-    { title: 'Reason', w: 210, cell: r => ({ pills: [{ label: r.reason, cls: r.cls }] }) },
-    { title: 'Rawan Note', w: 430, cell: r => ({ text: r.note }) },
-    { title: 'Next Action', w: CW - 250 - 140 - 210 - 430, cell: r => ({ text: r.next, fill: MUTE }) },
+    { title: 'Reason', w: 224, cell: r => ({ pills: [{ label: r.reason, cls: r.cls }] }) },
+    { title: 'Rawan Note', w: 416, cell: r => ({ text: r.note }) },
+    { title: 'Next Action', w: CW - 250 - 140 - 224 - 416, cell: r => ({ text: r.next, fill: MUTE }) },
   ], R.noteRows, { empty: 'No Rawan leads recorded today.' });
 
   // Recommended actions
