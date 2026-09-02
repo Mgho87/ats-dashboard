@@ -20,7 +20,10 @@ const TZ = 'Asia/Dubai';
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 /* ----------------------------- column detection ---------------------------- */
-function norm(s) { return String(s == null ? '' : s).toLowerCase().trim().replace(/\s+/g, ' '); }
+// Zero-width / word-joiner / BOM characters survive copy-paste into Sheets headers and would
+// otherwise stop an exact alias match. (JS \s already covers NBSP and ﻿; ​-‍ do not.)
+const INVISIBLE = /[​-‍⁠﻿]/g;
+function norm(s) { return String(s == null ? '' : s).replace(INVISIBLE, '').toLowerCase().trim().replace(/\s+/g, ' '); }
 
 function findCol(headers, aliases, exclude) {
   const H = headers.map(norm);
@@ -31,9 +34,11 @@ function findCol(headers, aliases, exclude) {
   return -1;
 }
 
+const DATE_ALIASES = ['date', 'transaction date', 'التاريخ', 'تاريخ', 'day'];
+
 function detectColumns(headers) {
   const c = {};
-  c.date    = findCol(headers, ['date', 'transaction date', 'التاريخ', 'تاريخ', 'day']);
+  c.date    = findCol(headers, DATE_ALIASES);
   c.ref     = findCol(headers, ['refrence number', 'reference number', 'reference', 'ref', 'file name', 'document', 'الرقم المرجعي']);
   c.amount  = findCol(headers, ['amount (aed)', 'amount', 'aed', 'total amount', 'total', 'price', 'value', 'المبلغ', 'القيمة']);
   c.paidAmt = findCol(headers, ['paid amount', 'amount paid', 'المبلغ المدفوع']);
@@ -47,6 +52,82 @@ function detectColumns(headers) {
   c.service = findCol(headers, ['service type', 'service', 'نوع الخدمة', 'الخدمة', 'description', 'الوصف']);
   c.notes   = findCol(headers, ['notes', 'note', 'remarks', 'ملاحظات']);
   return c;
+}
+
+/* -------------------- evidence-based date-column resolution ------------------
+ * A blanked or renamed A1 makes Google Sheets expose the column as "Column 1".
+ * That used to leave col.date = -1, which silently dropped EVERY row as "no date"
+ * while the fetch itself still reported success. When no header alias matches we
+ * now interrogate the DATA: sample the first column and accept it only if a strong
+ * majority of its non-empty values are genuinely dates. Evidence, never assumption —
+ * a first column full of text or bare numbers is still rejected. */
+const DATE_SAMPLE_MAX = 60;   // cells sampled, spread evenly across the sheet
+const DATE_SAMPLE_MIN = 5;    // fewer than this is not enough evidence to act on
+const DATE_MAJORITY   = 0.8;  // 80% of sampled non-empty cells must parse as dates
+
+function isPlausibleDate(v, now) {
+  if (v == null || v === '') return false;
+  const maxYear = ((now instanceof Date ? now : new Date()).getFullYear()) + 2;
+  const inRange = d => { const y = d.getFullYear(); return y >= 2000 && y <= maxYear; };
+  if (v instanceof Date) return !isNaN(v.getTime()) && inRange(v);
+  if (typeof v === 'number') return false;            // a bare number is not evidence of a date column
+  const s = String(v).trim();
+  if (!s) return false;
+  if (/^\d+(\.\d+)?$/.test(s)) return false;          // "60" / "2026": new Date() would invent a year from these
+  // Must actually look like a date: a separator, or a month name.
+  if (!/[\/\-.]/.test(s) && !/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(s)) return false;
+  const d = toDate(s);
+  return !!d && inRange(d);
+}
+
+function sampleColumn(rows, idx) {
+  const out = [];
+  const step = Math.max(1, Math.floor((rows.length || 1) / DATE_SAMPLE_MAX));
+  for (let i = 0; i < rows.length && out.length < DATE_SAMPLE_MAX; i += step) {
+    const r = rows[i]; if (!r) continue;
+    const v = r[idx];
+    if (v !== null && v !== undefined && v !== '') out.push(v);
+  }
+  return out;
+}
+
+/** Resolve the date column: header aliases first, then validated column-A fallback. */
+function detectDateColumn(headers, rows, now) {
+  const hdrs = headers || [];
+  const firstHeader = String(hdrs[0] == null ? '' : hdrs[0]);
+  const byHeader = findCol(hdrs, DATE_ALIASES);
+  if (byHeader >= 0) {
+    return { index: byHeader, method: 'header', headerValue: String(hdrs[byHeader] == null ? '' : hdrs[byHeader]),
+             sampled: 0, dateLike: 0, ratio: 1, warning: null };
+  }
+  const sample = sampleColumn(rows || [], 0);
+  const dateLike = sample.filter(v => isPlausibleDate(v, now)).length;
+  const ratio = sample.length ? dateLike / sample.length : 0;
+  const evidence = `${dateLike}/${sample.length} sampled values parsed as dates`;
+  if (sample.length >= DATE_SAMPLE_MIN && ratio >= DATE_MAJORITY) {
+    return { index: 0, method: 'fallback-column-a', headerValue: firstHeader, sampled: sample.length, dateLike, ratio,
+      warning: `Date header not recognized. Falling back to column A after validating date-like values (${evidence}). Detected header: "${firstHeader}"` };
+  }
+  return { index: -1, method: 'none', headerValue: firstHeader, sampled: sample.length, dateLike, ratio,
+    warning: `Date column NOT found: no header alias matched and column A failed date validation (${evidence}). Detected header: "${firstHeader}"` };
+}
+
+/* ---------------------------- source integrity ------------------------------
+ * Guards the "many rows in, zero records out" failure: a source that clearly holds
+ * data but parsed to nothing must NEVER be presented as genuine zero activity. */
+const MIN_ROWS_FOR_INTEGRITY = 10;   // below this, an empty result is plausibly a real quiet day
+
+function buildSourceIntegrity(s) {
+  let status = 'OK', reason = null;
+  if (s.dateColumnIndex < 0) {
+    status = 'NO_DATE_COLUMN';
+    reason = s.dateWarning;
+  } else if (s.nonEmptyRows >= MIN_ROWS_FOR_INTEGRITY && s.parsedRows === 0) {
+    status = 'PARSE_EMPTY';
+    reason = `${s.nonEmptyRows} non-empty rows were received but 0 valid records were parsed ` +
+             `(${s.excludedNoDate} excluded: no date · ${s.excludedBadDate} excluded: unreadable date).`;
+  }
+  return Object.assign({ ok: status === 'OK', status, reason }, s);
 }
 
 /* ------------------------------- primitives -------------------------------- */
@@ -161,6 +242,9 @@ function parseAll(transTable, expTable, settingsTable, now) {
   const tHeaders = (transTable && transTable.headers) || [];
   const tRows = (transTable && transTable.rows) || [];
   const col = detectColumns(tHeaders);
+  // Header aliases first; if none match, fall back to column A only on validated evidence.
+  const dateCol = detectDateColumn(tHeaders, tRows, now);
+  col.date = dateCol.index;
   const settings = parseSettings(settingsTable);
   const today = todayKeyDubai(now);
 
@@ -281,8 +365,26 @@ function parseAll(transTable, expTable, settingsTable, now) {
   };
 
   /* ---- audit summary (prepended) ---- */
+  const integrity = buildSourceIntegrity({
+    rawRows: tRows.length,
+    nonEmptyRows: tRows.length - skipped.empty,
+    parsedRows: records.length,
+    excludedNoDate: skipped.noDate,
+    excludedBadDate: skipped.badDate,
+    dateColumnIndex: dateCol.index,
+    dateColumn: dateCol.index >= 0 ? `${tHeaders[dateCol.index]} [${dateCol.index}]` : 'NOT FOUND',
+    dateDetectionMethod: dateCol.method,
+    dateHeaderValue: dateCol.headerValue,
+    dateSampled: dateCol.sampled,
+    dateLike: dateCol.dateLike,
+    dateWarning: dateCol.warning,
+  });
+
   const summary = [];
   summary.push(ev('ok', 'Workbook loaded', `${records.length} valid transactions · ${expenses.length} expense rows · ${tRows.length} raw rows scanned`));
+  if (dateCol.method === 'fallback-column-a') summary.push(ev('warning', 'Date column fallback', dateCol.warning));
+  if (dateCol.method === 'none') summary.push(ev('error', 'Date column not found', dateCol.warning));
+  if (!integrity.ok) summary.push(ev('error', 'Source integrity failed', integrity.reason));
   if (skipped.empty) summary.push(ev('info', 'Blank rows skipped', `${skipped.empty} empty rows ignored`));
   if (skipped.noDate) summary.push(ev('warning', 'Rows without dates', `${skipped.noDate} rows excluded (no date)`));
   if (skipped.badDate) summary.push(ev('error', 'Unreadable dates', `${skipped.badDate} rows excluded (bad date)`));
@@ -302,7 +404,7 @@ function parseAll(transTable, expTable, settingsTable, now) {
   else summary.push(ev('error', 'Reconciliation gap', `Total ${round2(totR)} ≠ Paid ${round2(paidR)} + Outstanding ${round2(outR)} (gap AED ${gap}). Caused by rows with a blank payment status.`));
 
   return {
-    now, today, col, settings, records, expenses, clientFirstSeen,
+    now, today, col, settings, records, expenses, clientFirstSeen, sourceIntegrity: integrity,
     meta: { minDate, maxDate, latest, totalRecords: records.length, expenseRecords: expenses.length, rawRows: tRows.length, options,
             detectedColumns: Object.keys(col).reduce((o, k) => (o[k] = col[k] >= 0 ? `${tHeaders[col[k]]} [${col[k]}]` : 'NOT FOUND', o), {}) },
     audit: summary.concat(audit).slice(0, 200),
@@ -818,4 +920,4 @@ function roundK(K) {
   if (K.costPerOrder != null) K.costPerOrder = round2(K.costPerOrder);
 }
 
-module.exports = { parseAll, analyze, detectColumns, parseAmount, normalizePayment, normalizeDelivery, todayKeyDubai, TZ };
+module.exports = { parseAll, analyze, detectColumns, detectDateColumn, isPlausibleDate, buildSourceIntegrity, parseAmount, normalizePayment, normalizeDelivery, todayKeyDubai, TZ, MIN_ROWS_FOR_INTEGRITY };

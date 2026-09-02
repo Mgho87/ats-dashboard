@@ -410,12 +410,20 @@ function buildSherrySVG(model, logo) {
   cv.header('Operations & Revenue', 'SHERRY · CONFIRMED WORK & ACTUAL MONEY', model.dateStr, model.dayName, 'Image 1 / 2 · Sherry', logo);
 
   if (model.source.sherry !== 'OK') {
-    cv.banner('bad', 'SHERRY SOURCE UNAVAILABLE', 'Confirmed-work figures could not be loaded. Values are hidden ("—") — they are NOT zero.');
+    // BROKEN = fetched fine but parsed to nothing (renamed/blanked date header). DOWN = could not fetch.
+    const broken = model.source.sherry === 'BROKEN';
+    const si = model.source.sherryIntegrity || {};
+    if (broken) {
+      cv.banner('bad', 'SHERRY SOURCE BROKEN',
+        `${si.nonEmptyRows || si.rawRows || 0} rows received from the Transactions sheet but 0 valid records parsed — check the date column/header (found: "${si.dateHeaderValue || ''}").`);
+    } else {
+      cv.banner('bad', 'SHERRY SOURCE UNAVAILABLE', 'Confirmed-work figures could not be loaded. Values are hidden ("—") — they are NOT zero.');
+    }
     cv.kpiRow([
       { label: 'Confirmed Jobs', value: '—' }, { label: 'Confirmed Value', value: '—' },
       { label: 'Received Today', value: '—' }, { label: 'Outstanding', value: '—' }, { label: 'Delivered', value: '—' },
     ]);
-    cv.footer('ALMUTARJEM · Sherry Operations · Image 1/2 · source unavailable.');
+    cv.footer('ALMUTARJEM · Sherry Operations · Image 1/2 · ' + (broken ? 'SOURCE BROKEN — figures withheld, NOT zero.' : 'source unavailable.'));
     return cv.assemble();
   }
 

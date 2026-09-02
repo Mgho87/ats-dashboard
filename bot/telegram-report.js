@@ -168,27 +168,48 @@ function rawanDateKey(v) {
 function rawanAmount(s) { const n = parseFloat(String(s || '').replace(/[^0-9.\-]/g, '')); return isNaN(n) ? 0 : n; }
 
 /* ---------- data fetch for a given day ---------- */
-async function getSherry(dateKey) {
+/* Both Sherry getters return { rows, integrity }. `integrity` is compute.js's source-integrity
+ * verdict for the WHOLE Transactions tab (not one day) — a fetch can succeed, look healthy and
+ * still parse to nothing when the date column is renamed. Callers must treat integrity.ok===false
+ * as a BROKEN source and never as a genuine zero-activity day. */
+function sherryDiagnostics(integrity) {
+  return {
+    rawRows: integrity.rawRows, nonEmptyRows: integrity.nonEmptyRows, parsedRows: integrity.parsedRows,
+    excludedRows: integrity.excludedNoDate + integrity.excludedBadDate,
+    excludedNoDate: integrity.excludedNoDate, excludedBadDate: integrity.excludedBadDate,
+    dateColumn: integrity.dateColumn, dateDetectionMethod: integrity.dateDetectionMethod,
+    dateHeaderValue: integrity.dateHeaderValue, status: integrity.status,
+  };
+}
+async function parseSherrySheet() {
   const trans = await fetchSheet(SPREADSHEET_ID, T_NAME);
   const exp = (await fetchSheetOptional(SPREADSHEET_ID, E_NAME)) || { headers: [], rows: [] };
   const settings = await fetchSheetOptional(SPREADSHEET_ID, S_NAME);
   const parsed = compute.parseAll(trans, exp, settings, new Date());
-  return parsed.records.filter(r => r.dateKey === dateKey).map(r => ({
+  const integrity = parsed.sourceIntegrity;
+  // Diagnostics only — never row contents.
+  logEvent('sherry_source', sherryDiagnostics(integrity));
+  if (integrity.dateDetectionMethod === 'fallback-column-a') log('WARN: ' + integrity.dateWarning);
+  if (!integrity.ok) log('ALERT: SHERRY SOURCE BROKEN — ' + integrity.reason);
+  return { parsed, integrity };
+}
+async function getSherry(dateKey) {
+  const { parsed, integrity } = await parseSherrySheet();
+  const rows = parsed.records.filter(r => r.dateKey === dateKey).map(r => ({
     ref: r.ref || '', client: r.client || '', service: r.service || '', amount: +r.amount || 0,
     status: r.payment || '', fileStatus: r.delivery || '', method: r.method || '', lead: r.lead || '', notes: r.notes || '', phone: r.phone || '',
   }));
+  return { rows, integrity };
 }
 /* ALL Sherry/Transactions rows (any date) — needed for cross-sheet conversion matching in the pipeline. */
 async function getSherryAll() {
-  const trans = await fetchSheet(SPREADSHEET_ID, T_NAME);
-  const exp = (await fetchSheetOptional(SPREADSHEET_ID, E_NAME)) || { headers: [], rows: [] };
-  const settings = await fetchSheetOptional(SPREADSHEET_ID, S_NAME);
-  const parsed = compute.parseAll(trans, exp, settings, new Date());
-  return parsed.records.map(r => ({
+  const { parsed, integrity } = await parseSherrySheet();
+  const rows = parsed.records.map(r => ({
     dateKey: r.dateKey, ref: r.ref || '', client: r.client || '', service: r.service || '', amount: +r.amount || 0,
     // raw sheet labels (e.g. "Paid" / "Partial" / "Delivered") so the v2 renderer's status pills match the sheet verbatim
     status: r.rawPayment || r.payment || '', fileStatus: r.rawDelivery || r.delivery || '', method: r.method || '', lead: r.lead || '', notes: r.notes || '', phone: r.phone || '',
   }));
+  return { rows, integrity };
 }
 async function getRawan(dateKey) {
   if (!RAWAN_URL) return { rows: [], connected: false };
@@ -288,8 +309,15 @@ function rawanMatchesSherry(sherry) {
     return false;
   };
 }
-function buildReport(dateKey, label, sherry, rawan, rawanConnected) {
+function buildReport(dateKey, label, sherry, rawan, rawanConnected, sherryIntegrity) {
   const SEP = '━━━━━━━━━━━━━━━━━━';
+  // Source-integrity alert (text mode). A sheet that clearly holds data but parsed to nothing is
+  // NEVER shown as a genuine quiet day — the figures below it are withheld as unreliable.
+  const sherryBroken = !!(sherryIntegrity && !sherryIntegrity.ok);
+  const brokenBanner = !sherryBroken ? '' :
+    `🚨 <b>SHERRY SOURCE BROKEN</b>\n${sherryIntegrity.nonEmptyRows} rows were received from the ` +
+    `${esc(T_NAME)} sheet but 0 valid records were parsed. Check the date column/header ` +
+    `(detected: "${esc(sherryIntegrity.dateHeaderValue)}").\nSherry's figures below are NOT real zeros.\n${SEP}\n`;
   const s = empStats(sherry), r = empStats(rawan);
   // office totals (clients de-duplicated across both staff so the same person isn't counted twice)
   const allClients = new Set([...sherry, ...rawan].map(x => (x.client || '').trim().toLowerCase()).filter(Boolean)).size;
@@ -321,14 +349,18 @@ function buildReport(dateKey, label, sherry, rawan, rawanConnected) {
     ? list.map((x, i) => fileLine(i + 1, x, withOutcome, tag)).join('')
     : '<i>None.</i>\n';
 
+  // When the source is broken the Sherry figures are withheld ("—"), never printed as zeros.
+  const sv = v => sherryBroken ? '—' : v;
   const report =
-    `📅 <b>DAILY OFFICE REPORT</b>\n${esc(dayName)} • ${esc(dateStr)}\n${REPORT_TIME} Asia/Dubai\n` +
+    `📅 <b>DAILY OFFICE REPORT</b>\n${esc(dayName)} • ${esc(dateStr)}\n${REPORT_TIME} Asia/Dubai\n${SEP}\n` +
+    brokenBanner +
     // B) DAILY SUMMARY — SHERRY ONLY
-    `${SEP}\n📌 <b>DAILY SUMMARY (Sherry)</b>\n` +
-    `Status: ${esc(sherryStatus)}\nClients: ${s.clients}\nFiles: ${s.files}\nCompleted: ${s.completed}\nPending: ${s.pending}\nRevenue: ${AED(s.revenue)}\n` +
+    `📌 <b>DAILY SUMMARY (Sherry)</b>\n` +
+    `Status: ${sherryBroken ? 'SOURCE BROKEN — figures withheld' : esc(sherryStatus)}\n` +
+    `Clients: ${sv(s.clients)}\nFiles: ${sv(s.files)}\nCompleted: ${sv(s.completed)}\nPending: ${sv(s.pending)}\nRevenue: ${sv(AED(s.revenue))}\n` +
     // C) SHERRY confirmed/accepted files
-    `${SEP}\n👩‍💼 <b>SHERRY — Confirmed / Accepted</b>  (${s.files} files · ${AED(s.revenue)})\n` +
-    fileList(sherry, false, '') +
+    `${SEP}\n👩‍💼 <b>SHERRY — Confirmed / Accepted</b>  (${sv(s.files)} files · ${sv(AED(s.revenue))})\n` +
+    (sherryBroken ? '<i>Withheld — the Transactions source is broken. This is NOT "no work today".</i>\n' : fileList(sherry, false, '')) +
     // D) RAWAN — confirmed (matched in Sherry) first, then pending / not agreed
     `${SEP}\n👩‍💼 <b>RAWAN</b>\n` +
     (!rawanConnected ? '<i>Rawan feed not connected.</i>\n' :
@@ -338,15 +370,17 @@ function buildReport(dateKey, label, sherry, rawan, rawanConnected) {
       fileList(rawanPending, true, '🟡 <i>Pending / Not Agreed</i>')
     ) +
     // E) TOTAL DAILY OFFICE — full combined
-    `${SEP}\n🏢 <b>TOTAL DAILY OFFICE</b>\n` +
-    `Total Clients: ${allClients}\nTotal Files: ${tFiles}\nCompleted: ${tCompleted}\nPending: ${tPending}\nRevenue: ${AED(tRevenue)}\n` +
+    // Office totals include Sherry, so they are unreliable too while her source is broken.
+    `${SEP}\n🏢 <b>TOTAL DAILY OFFICE</b>${sherryBroken ? ' <i>(incomplete — Sherry missing)</i>' : ''}\n` +
+    `Total Clients: ${sv(allClients)}\nTotal Files: ${sv(tFiles)}\nCompleted: ${sv(tCompleted)}\nPending: ${sv(tPending)}\nRevenue: ${sv(AED(tRevenue))}\n` +
     `Rawan confirmed: ${rawanConfirmed.length} · Rawan pending/not agreed: ${rawanPending.length}\n` +
-    `Best Performer: ${esc(best)}\nMissing Data: ${esc(missSummary)}\n` +
+    `Best Performer: ${sherryBroken ? '—' : esc(best)}\nMissing Data: ${esc(missSummary)}\n` +
     // Reminders
     `${SEP}\n🔔 <b>IMPORTANT REMINDERS</b>\n` +
     `• Check pending payments\n• Follow up unfinished files\n• Make sure Lead Source is filled\n• Make sure Payment Method is filled\n• Review tomorrow's work\n` +
-    (hasActivity ? `✅ Scheduler running — report delivered automatically at ${REPORT_TIME}.`
-                 : `✅ No business activity recorded today — scheduler test successful.`);
+    (sherryBroken ? `🚨 This report is INCOMPLETE — fix the ${esc(T_NAME)} date column, then re-send with --send --date ${dateKey}.`
+     : hasActivity ? `✅ Scheduler running — report delivered automatically at ${REPORT_TIME}.`
+                   : `✅ No business activity recorded today — scheduler test successful.`);
 
   if (report.length <= 4000) return [report];
   const chunks = []; let cur = '';
@@ -392,12 +426,12 @@ async function sendChunks(chatId, chunks) {
 
 /* ---------- the main action: build + (optionally) send a report for a day ---------- */
 async function makeReport(dateKey, label) {
-  let sherry = [], rawanRes = { rows: [], connected: false };
-  try { sherry = await getSherry(dateKey); }
+  let sherry = [], sherryIntegrity = null, rawanRes = { rows: [], connected: false };
+  try { const g = await getSherry(dateKey); sherry = g.rows; sherryIntegrity = g.integrity; }
   catch (e) { log('SHEET ERROR (Sherry/' + dateKey + '): ' + e.message); throw e; }
   try { rawanRes = await getRawan(dateKey); }
   catch (e) { log('SHEET ERROR (Rawan/' + dateKey + '): ' + e.message); /* Rawan optional — continue */ }
-  const chunks = buildReport(dateKey, label, sherry, rawanRes.rows, rawanRes.connected);
+  const chunks = buildReport(dateKey, label, sherry, rawanRes.rows, rawanRes.connected, sherryIntegrity);
   return { chunks, sherryN: sherry.length, rawanN: rawanRes.rows.length };
 }
 async function sendReport(dateKey, label, chatId) {
@@ -420,10 +454,10 @@ async function makeReportImage(dateKey) {
   // for the shared Sharp rasteriser/logo loader — its computeModel/pages are no longer called.
   const v2 = require('./report-image-v2');
   // ---- Sherry (ACTUAL): short retry before declaring the source down (transient-safe) ----
-  let sherryAll = null, sherryLoaded = false;
+  let sherryAll = null, sherryLoaded = false, sherryIntegrity = null;
   for (let attempt = 0; attempt < 3 && !sherryLoaded; attempt++) {
     if (attempt) await new Promise(r => setTimeout(r, 600 * attempt));
-    try { sherryAll = await getSherryAll(); sherryLoaded = true; }
+    try { const g = await getSherryAll(); sherryAll = g.rows; sherryIntegrity = g.integrity; sherryLoaded = true; }
     catch (e) { log('SHEET ERROR (Sherry/' + dateKey + ') attempt ' + (attempt + 1) + ': ' + e.message); }
   }
   const sherry = sherryLoaded ? sherryAll.filter(r => r.dateKey === dateKey) : [];   // same-day confirmed jobs
@@ -432,8 +466,14 @@ async function makeReportImage(dateKey) {
   try { ra = await getRawanAll(); } catch (e) { log('SHEET ERROR (RawanAll/' + dateKey + '): ' + e.message); }
   const rawanSameDay = ra.rows.filter(r => r.date === dateKey);                        // today's incoming leads
   // Source health → banner + "—" (never AED 0 / 0 clients). Requirement #6.
-  const source = { sherry: sherryLoaded ? 'OK' : 'DOWN', rawan: ra.loaded ? 'OK' : 'DOWN' };
-  logEvent('report_source', { day: dateKey, sherry: source.sherry, rawan: source.rawan, sherryRows: sherry.length, rawanRows: rawanSameDay.length });
+  // DOWN   = the sheet could not be fetched at all.
+  // BROKEN = it was fetched and looked fine, but parsed to nothing (renamed date header etc.).
+  // Both are !== 'OK', so they reuse the existing withhold-the-figures path rather than duplicating it.
+  const sherryState = !sherryLoaded ? 'DOWN' : (sherryIntegrity && !sherryIntegrity.ok ? 'BROKEN' : 'OK');
+  const source = { sherry: sherryState, rawan: ra.loaded ? 'OK' : 'DOWN', sherryIntegrity };
+  logEvent('report_source', Object.assign(
+    { day: dateKey, sherry: source.sherry, rawan: source.rawan, sherryRows: sherry.length, rawanRows: rawanSameDay.length },
+    sherryIntegrity ? sherryDiagnostics(sherryIntegrity) : {}));
   const model = v2.computeModelV2(dateKey, sherry, rawanSameDay, { source });
   try { fs.mkdirSync(ARCHIVE_DIR, { recursive: true }); } catch (_) {}
   const rendered = await v2.renderTwoImages(model, ARCHIVE_DIR, {});                   // writes SHERRY.png + RAWAN.png
